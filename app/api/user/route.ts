@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { getSupabase } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = getSupabase()
+    if (!supabase) return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
+
     const body = await request.json()
     const { firebase_uid, name, email, college, monthly_pocket_money } = body
 
@@ -37,6 +40,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const supabase = getSupabase()
+  if (!supabase) return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
+
   const uid = request.nextUrl.searchParams.get('uid')
   if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 })
 
@@ -49,3 +55,4 @@ export async function GET(request: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ user: data })
 }
+

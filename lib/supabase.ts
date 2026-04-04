@@ -1,9 +1,11 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export function getSupabase(): SupabaseClient | null {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) return null
+  return createClient(url, key)
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -65,6 +67,8 @@ export interface EMICalculation {
 // ─── User helpers ─────────────────────────────────────────────────────────────
 
 export async function upsertUser(profile: UserProfile) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('users')
     .upsert({ ...profile, updated_at: new Date().toISOString() }, { onConflict: 'firebase_uid' })
@@ -74,6 +78,8 @@ export async function upsertUser(profile: UserProfile) {
 }
 
 export async function getUser(firebaseUid: string) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -83,6 +89,8 @@ export async function getUser(firebaseUid: string) {
 }
 
 export async function updateUser(firebaseUid: string, updates: Partial<UserProfile>) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('users')
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -95,6 +103,8 @@ export async function updateUser(firebaseUid: string, updates: Partial<UserProfi
 // ─── Transaction helpers ──────────────────────────────────────────────────────
 
 export async function getTransactions(firebaseUid: string, limit = 50) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('transactions')
     .select('*')
@@ -105,11 +115,15 @@ export async function getTransactions(firebaseUid: string, limit = 50) {
 }
 
 export async function addTransaction(tx: Transaction) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase.from('transactions').insert(tx).select().single()
   return { data, error }
 }
 
 export async function deleteTransaction(id: string) {
+  const supabase = getSupabase()
+  if (!supabase) return { error: new Error('Supabase environment variables not configured') }
   const { error } = await supabase.from('transactions').delete().eq('id', id)
   return { error }
 }
@@ -117,6 +131,8 @@ export async function deleteTransaction(id: string) {
 // ─── Budget helpers ───────────────────────────────────────────────────────────
 
 export async function getBudgetPlan(firebaseUid: string, month: number, year: number) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('budget_plans')
     .select('*')
@@ -128,6 +144,8 @@ export async function getBudgetPlan(firebaseUid: string, month: number, year: nu
 }
 
 export async function upsertBudgetPlan(plan: BudgetPlan) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('budget_plans')
     .upsert(plan, { onConflict: 'firebase_uid,month,year' })
@@ -139,6 +157,8 @@ export async function upsertBudgetPlan(plan: BudgetPlan) {
 // ─── Goal helpers ─────────────────────────────────────────────────────────────
 
 export async function getGoals(firebaseUid: string) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('goals')
     .select('*')
@@ -148,11 +168,15 @@ export async function getGoals(firebaseUid: string) {
 }
 
 export async function addGoal(goal: Goal) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase.from('goals').insert(goal).select().single()
   return { data, error }
 }
 
 export async function updateGoalSaved(id: string, saved_amount: number) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('goals')
     .update({ saved_amount })
@@ -163,6 +187,8 @@ export async function updateGoalSaved(id: string, saved_amount: number) {
 }
 
 export async function deleteGoal(id: string) {
+  const supabase = getSupabase()
+  if (!supabase) return { error: new Error('Supabase environment variables not configured') }
   const { error } = await supabase.from('goals').delete().eq('id', id)
   return { error }
 }
@@ -170,11 +196,15 @@ export async function deleteGoal(id: string) {
 // ─── EMI helpers ──────────────────────────────────────────────────────────────
 
 export async function saveEMICalculation(calc: EMICalculation) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase.from('emi_calculations').insert(calc).select().single()
   return { data, error }
 }
 
 export async function getEMIHistory(firebaseUid: string) {
+  const supabase = getSupabase()
+  if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase
     .from('emi_calculations')
     .select('*')
@@ -183,3 +213,4 @@ export async function getEMIHistory(firebaseUid: string) {
     .limit(10)
   return { data, error }
 }
+
