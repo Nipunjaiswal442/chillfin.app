@@ -9,6 +9,10 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!auth) {
+      setLoading(false)
+      return
+    }
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser)
       setLoading(false)
@@ -17,8 +21,11 @@ export function useAuth() {
   }, [])
 
   const logout = async () => {
-    await signOut(auth)
+    if (auth) {
+      await signOut(auth)
+    }
   }
 
   return { user, loading, logout }
 }
+

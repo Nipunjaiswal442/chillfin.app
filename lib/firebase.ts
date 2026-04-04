@@ -1,7 +1,7 @@
 'use client'
 
-import { initializeApp, getApps, getApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { initializeApp, getApps, getApp, FirebaseApp } from 'firebase/app'
+import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -13,14 +13,21 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 }
 
-const app = typeof window !== 'undefined' 
-  ? (getApps().length ? getApp() : initializeApp(firebaseConfig)) 
-  : undefined as any
-
-export const auth = typeof window !== 'undefined' ? getAuth(app) : undefined as any
-export const googleProvider = typeof window !== 'undefined' ? new GoogleAuthProvider() : undefined as any
+let app: FirebaseApp | undefined = undefined
+let auth: Auth | undefined = undefined
+let googleProvider: GoogleAuthProvider | undefined = undefined
 
 if (typeof window !== 'undefined') {
-  googleProvider.setCustomParameters({ prompt: 'select_account' })
+  try {
+    app = getApps().length ? getApp() : initializeApp(firebaseConfig)
+    auth = getAuth(app)
+    googleProvider = new GoogleAuthProvider()
+    googleProvider.setCustomParameters({ prompt: 'select_account' })
+  } catch (error) {
+    console.error('Firebase initialization error:', error)
+  }
 }
+
+export { auth, googleProvider }
+
 

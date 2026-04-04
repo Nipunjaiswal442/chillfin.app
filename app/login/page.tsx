@@ -20,6 +20,13 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setSigning(true)
     setError(null)
+    
+    if (!auth || !googleProvider) {
+      setError('Application misconfigured: Missing environment variables.')
+      setSigning(false)
+      return
+    }
+
     try {
       const result = await signInWithPopup(auth, googleProvider)
       const firebaseUser = result.user
