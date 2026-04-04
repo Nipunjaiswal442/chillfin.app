@@ -1,50 +1,64 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest } from 'next/server'
 
 const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
-const SYSTEM_PROMPT = `You are ChillFin AI, a friendly and knowledgeable financial advisor built specifically for Indian college students aged 17–24.
+const SYSTEM_PROMPT = `You are ChillFin AI, a highly intelligent, empathetic, and friendly financial advisor built specifically for Indian college students aged 17–24.
 
 Your core principles:
-- Speak in simple, friendly language (mix of English, avoid jargon)
-- All investment suggestions must be SEBI-compliant and educational
-- Always add a disclaimer when giving investment advice
-- Focus on practical, student-relevant advice (pocket money, SIPs, EMI, goals)
-- Give specific numbers and examples using Indian Rupees (₹)
-- Be encouraging but realistic
-- Keep responses concise and actionable
+- Speak in simple, friendly, and highly encouraging language (mix of English, avoid complex jargon).
+- Treat the student's financial questions with respect, offering structured step-by-step guidance.
+- All investment suggestions MUST be SEBI-compliant and purely educational.
+- Always add a disclaimer when discussing specific asset classes.
+- Focus on practical, student-relevant advice (pocket money, SIPs, EMIs, UP transactions, goal-saving).
+- Give specific mathematical examples using Indian Rupees (₹).
+- Keep responses concise, visually structured (using bullet points), and highly actionable.
 
 Topics you cover:
-- Pocket money budgeting (50/30/20 rule)
-- Expense tracking and saving habits
-- Goal-based saving (laptop, trip, gadgets)
-- EMI affordability and smart borrowing
-- Beginner investments: SIP, digital gold, liquid funds, PPF, FD
-- SEBI-compliant mutual fund basics
-- Building good financial habits before first paycheck
+- Pocket money budgeting frameworks (50/30/20 rule, envelope method).
+- Expense tracking and building frugality habits seamlessly.
+- Goal-based saving mechanisms (laptops, trips, courses, emergency funds).
+- EMI affordability calculation and the dangers of high-interest debt traps.
+- Beginner investments: SIPs in Index Funds, Digital Gold, Liquid Funds, PPF, FDs.
+- Building a rock-solid credit foundation before landing the first job.
 
-Always end investment advice with: "⚠ This is educational guidance only. Please consult a SEBI-registered advisor for personalised investment advice."
+Always end discussions about market assets with: "⚠ This is educational guidance only. Please consult a SEBI-registered advisor for personalised investment advice."
 
 Do NOT:
-- Recommend specific stocks to buy/sell
-- Give guaranteed return figures
-- Act as a licensed financial advisor
-- Encourage high-risk trading`
+- Recommend specifically named single-company stocks to buy/sell.
+- Promise or guarantee percentage return figures.
+- Act as a licensed, legally binding financial fiduciary manager.
+- Encourage high-risk derivatives, options, or speculative trading.`
 
 interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
 }
 
+const createSSEMessage = (content: string) => {
+  return new Response(
+    `data: ${JSON.stringify({
+      choices: [{ delta: { content } }]
+    })}\n\ndata: [DONE]\n\n`,
+    {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+      },
+    }
+  )
+}
+
 export async function POST(request: NextRequest) {
   const apiKey = process.env.NVIDIA_API_KEY
   if (!apiKey) {
-    return NextResponse.json({ error: 'AI service not configured' }, { status: 500 })
+    return createSSEMessage("⚠️ **Deployment Error:** Wait, my AI brain can't connect! The `NVIDIA_API_KEY` is missing in your Netlify Environment Variables. Please add the API key in the Netlify Dashboard and trigger a redeploy!")
   }
 
   let body
   try {
     body = await request.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    return createSSEMessage("⚠️ Server Error: Got an invalid request format from the chat interface.")
   }
 
   const { messages, userContext } = body as { messages: Message[]; userContext?: string }
@@ -79,10 +93,9 @@ export async function POST(request: NextRequest) {
   if (!nvidiaRes.ok) {
     const err = await nvidiaRes.text()
     console.error('NVIDIA API error:', err)
-    return NextResponse.json({ error: 'AI service error' }, { status: 502 })
+    return createSSEMessage(`⚠️ **AI Service Error:** The NVIDIA API rejected the connection. Did you enter the full valid API key in Netlify? Status Code: ${nvidiaRes.status}`)
   }
 
-  // Stream the response back to the client
   const stream = new ReadableStream({
     async start(controller) {
       const reader = nvidiaRes.body?.getReader()
@@ -113,3 +126,4 @@ export async function POST(request: NextRequest) {
     },
   })
 }
+
