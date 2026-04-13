@@ -10,12 +10,15 @@
 
 | Module | What it does |
 |---|---|
-| **Pocket Money Tracker** | Log income & expenses with categories, filter by type, see real-time balance |
-| **Smart Budget Planner** | Auto-generated 50/30/20 budget anchored to your actual pocket money |
-| **Goal Vaults** | Save toward named goals (laptop, trip, gadget) with visual progress bars |
-| **EMI Advisor** | Calculate real EMI cost + affordability score (0–100) before committing |
-| **Investment Portfolio** | Beginner-safe, SEBI-aligned investment options (SIP, gold, liquid funds, PPF) |
-| **AI Financial Advisor** | Streaming AI chat powered by Qwen 3.5-122B — SEBI-aware, student-focused |
+| **Pocket Money Tracker** | Log income & expenses with categories, filter by type, see real-time balance + category pie chart |
+| **Smart Budget Planner** | Auto-generated 50/30/20 budget anchored to pocket money — now triggers from Overview too |
+| **Goal Vaults** | Save toward named goals with visual progress bars + horizontal bar chart |
+| **EMI Advisor** | Calculate EMI cost + affordability score, view principal/interest donut & amortisation chart |
+| **Investment Portfolio** | SEBI-aligned options with **"Calculate Returns →"** per card |
+| **Portfolio Calculator** | SIP compound growth projections with live area chart and milestone cards |
+| **Financial Tools** | Inflation Calculator + Asset Depreciation Calculator, both with graphs |
+| **AI Financial Advisor** | Streaming AI chat (Qwen 3.5-122B) — SEBI-aware, student-focused |
+| **Connected Overview** | Financial health score (0–100), auto-generate budget inline, goals savings synced across all tabs |
 
 ---
 

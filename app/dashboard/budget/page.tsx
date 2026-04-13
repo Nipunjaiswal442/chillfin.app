@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
+import { useUser } from '@/contexts/UserContext'
 import { useTransactions } from '@/hooks/useTransactions'
 import { getUser, upsertBudgetPlan, getBudgetPlan, updateUser, BudgetPlan } from '@/lib/supabase'
 import { formatCurrency, generateBudget, getCurrentMonthYear, getMonthName } from '@/lib/utils'
@@ -29,6 +30,7 @@ const BUDGET_CATS: BudgetCategory[] = [
 
 export default function BudgetPage() {
   const { user } = useAuth()
+  const { refetchProfile } = useUser()
   const { transactions } = useTransactions(user?.uid)
   const [monthlyIncome, setMonthlyIncome] = useState<number>(0)
   const [incomeInput, setIncomeInput] = useState('')
@@ -87,6 +89,7 @@ export default function BudgetPage() {
     setMonthlyIncome(income)
     setPlan(newPlan)
     setSaving(false)
+    refetchProfile()   // sync shared UserContext so dashboard reflects new budget
   }
 
   // Actual spending this month by category mapping

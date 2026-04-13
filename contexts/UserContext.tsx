@@ -1,23 +1,36 @@
 'use client'
 
 /**
- * UserContext — shared state for the authenticated user's profile, goals, and
- * current-month budget plan. Wraps all dashboard pages so each page doesn't
- * need to independently call getUser() on mount.
+ * UserContext — shared state for the authenticated user's profile, goals,
+ * budget plan, and derived financial totals. Wraps all dashboard pages.
+ *
+ * Also exposes `setMonthlyIncomeAndBudget` which updates the user's income
+ * AND auto-generates (or regenerates) the 50/30/20 budget plan for the
+ * current month in one call — used by the Overview quick-setup panel.
  */
 
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { getUser, getGoals, getBudgetPlan, UserProfile, Goal, BudgetPlan } from '@/lib/supabase'
-import { getCurrentMonthYear } from '@/lib/utils'
+import {
+  getUser, getGoals, getBudgetPlan, updateUser, upsertBudgetPlan,
+  UserProfile, Goal, BudgetPlan,
+} from '@/lib/supabase'
+import { getCurrentMonthYear, generateBudget } from '@/lib/utils'
 
 interface UserContextValue {
   profile: UserProfile | null
   goals: Goal[]
   budgetPlan: BudgetPlan | null
   profileLoading: boolean
+  /** Sum of saved_amount across all goals */
+  totalGoalsSaved: number
   refetchProfile: () => void
   refetchGoals: () => void
+  /**
+   * Update monthly pocket-money AND auto-generate / override the current
+   * month's 50/30/20 budget plan. Updates context optimistically.
+   */
+  setMonthlyIncomeAndBudget: (income: number) => Promise<void>
 }
 
 const UserContext = createContext<UserContextValue>({
@@ -25,8 +38,10 @@ const UserContext = createContext<UserContextValue>({
   goals: [],
   budgetPlan: null,
   profileLoading: true,
+  totalGoalsSaved: 0,
   refetchProfile: () => {},
   refetchGoals: () => {},
+  setMonthlyIncomeAndBudget: async () => {},
 })
 
 export function UserProvider({ children }: { children: ReactNode }) {
@@ -61,6 +76,37 @@ export function UserProvider({ children }: { children: ReactNode }) {
     fetchGoals()
   }, [fetchProfile, fetchGoals])
 
+  /** Sum of all goal saved_amounts */
+  const totalGoalsSaved = goals.reduce((s, g) => s + Number(g.saved_amount), 0)
+
+  /**
+   * One-shot: save income to profile + auto-generate 50/30/20 budget plan.
+   * Called from the Dashboard overview "Quick Setup" panel and from the
+   * Budget page "Update & Regenerate" button.
+   */
+  const setMonthlyIncomeAndBudget = useCallback(async (income: number) => {
+    if (!user || income <= 0) return
+    const generated = generateBudget(income)
+    const newPlan: BudgetPlan = {
+      firebase_uid: user.uid,
+      month,
+      year,
+      needs_amount: generated.needs_amount,
+      wants_amount: generated.wants_amount,
+      savings_amount: generated.savings_amount,
+    }
+    // Optimistic update
+    setProfile((prev) => prev ? { ...prev, monthly_pocket_money: income } : prev)
+    setBudgetPlan(newPlan)
+    // Persist
+    await Promise.all([
+      updateUser(user.uid, { monthly_pocket_money: income }),
+      upsertBudgetPlan(newPlan),
+    ])
+    // Revalidate from DB
+    fetchProfile()
+  }, [user, month, year, fetchProfile])
+
   return (
     <UserContext.Provider
       value={{
@@ -68,8 +114,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
         goals,
         budgetPlan,
         profileLoading,
+        totalGoalsSaved,
         refetchProfile: fetchProfile,
         refetchGoals: fetchGoals,
+        setMonthlyIncomeAndBudget,
       }}
     >
       {children}

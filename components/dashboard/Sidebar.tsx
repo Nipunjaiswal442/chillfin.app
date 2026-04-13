@@ -15,17 +15,19 @@ import {
   LogOut,
   Menu,
   X,
+  Wrench,
 } from 'lucide-react'
 import { useState } from 'react'
 
 const NAV_ITEMS = [
-  { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
-  { href: '/dashboard/tracker', label: 'Tracker', icon: Wallet },
-  { href: '/dashboard/budget', label: 'Budget', icon: PieChart },
-  { href: '/dashboard/goals', label: 'Goals', icon: Target },
-  { href: '/dashboard/emi', label: 'EMI Advisor', icon: Calculator },
-  { href: '/dashboard/portfolio', label: 'Portfolio', icon: TrendingUp },
-  { href: '/dashboard/advisor', label: 'AI Advisor', icon: Bot },
+  { href: '/dashboard',           label: 'Overview',   icon: LayoutDashboard, exact: true },
+  { href: '/dashboard/tracker',   label: 'Tracker',    icon: Wallet,          exact: false },
+  { href: '/dashboard/budget',    label: 'Budget',     icon: PieChart,        exact: false },
+  { href: '/dashboard/goals',     label: 'Goals',      icon: Target,          exact: false },
+  { href: '/dashboard/emi',       label: 'EMI Advisor',icon: Calculator,      exact: false },
+  { href: '/dashboard/portfolio', label: 'Portfolio',  icon: TrendingUp,      exact: false },
+  { href: '/dashboard/tools',     label: 'Tools',      icon: Wrench,          exact: false },
+  { href: '/dashboard/advisor',   label: 'AI Advisor', icon: Bot,             exact: false },
 ]
 
 export default function Sidebar() {
@@ -47,8 +49,8 @@ export default function Sidebar() {
 
       {/* Nav links */}
       <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href
+        {NAV_ITEMS.map(({ href, label, icon: Icon, exact }) => {
+          const active = exact ? pathname === href : pathname === href || pathname.startsWith(href + '/')
           return (
             <Link
               key={href}
