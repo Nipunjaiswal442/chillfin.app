@@ -102,7 +102,7 @@ export async function updateUser(firebaseUid: string, updates: Partial<UserProfi
 
 // ─── Transaction helpers ──────────────────────────────────────────────────────
 
-export async function getTransactions(firebaseUid: string, limit = 50) {
+export async function getTransactions(firebaseUid: string, limit = 500) {
   const supabase = getSupabase()
   if (!supabase) return { data: null, error: new Error('Supabase environment variables not configured') }
   const { data, error } = await supabase

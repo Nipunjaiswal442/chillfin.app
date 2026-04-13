@@ -1,23 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
+import { verifyIdToken } from '@/lib/firebase-admin'
+
+// ─── Helper: extract + verify token ──────────────────────────────────────────
+
+async function getVerifiedUid(request: NextRequest): Promise<string | null> {
+  try {
+    const token = request.headers.get('Authorization')?.replace('Bearer ', '')
+    const decoded = await verifyIdToken(token)
+    return decoded.uid
+  } catch {
+    return null
+  }
+}
+
+// ─── POST /api/user — upsert user profile ─────────────────────────────────────
 
 export async function POST(request: NextRequest) {
+  const uid = await getVerifiedUid(request)
+  if (!uid) {
+    return NextResponse.json({ error: 'Unauthorized — valid Firebase ID token required' }, { status: 401 })
+  }
+
   try {
     const supabase = getSupabase()
-    if (!supabase) return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
+    if (!supabase) {
+      return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
+    }
 
     const body = await request.json()
-    const { firebase_uid, name, email, college, monthly_pocket_money } = body
-
-    if (!firebase_uid) {
-      return NextResponse.json({ error: 'firebase_uid is required' }, { status: 400 })
-    }
+    // uid is sourced from the verified token — never trust the request body for uid
+    const { name, email, college, monthly_pocket_money } = body
 
     const { data, error } = await supabase
       .from('users')
       .upsert(
         {
-          firebase_uid,
+          firebase_uid: uid,
           name: name ?? null,
           email: email ?? null,
           college: college ?? null,
@@ -39,13 +58,20 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// ─── GET /api/user?uid= — fetch user profile ─────────────────────────────────
+
 export async function GET(request: NextRequest) {
+  const uid = await getVerifiedUid(request)
+  if (!uid) {
+    return NextResponse.json({ error: 'Unauthorized — valid Firebase ID token required' }, { status: 401 })
+  }
+
   const supabase = getSupabase()
-  if (!supabase) return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
+  if (!supabase) {
+    return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
+  }
 
-  const uid = request.nextUrl.searchParams.get('uid')
-  if (!uid) return NextResponse.json({ error: 'uid required' }, { status: 400 })
-
+  // Always use the verified uid — ignore query param to prevent data leakage
   const { data, error } = await supabase
     .from('users')
     .select('*')

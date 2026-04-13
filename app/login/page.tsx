@@ -31,12 +31,17 @@ export default function LoginPage() {
       const result = await signInWithPopup(auth, googleProvider)
       const firebaseUser = result.user
 
-      // Upsert user in Supabase
+      // Get Firebase ID token to authenticate /api/user call
+      const idToken = await firebaseUser.getIdToken()
+
+      // Upsert user in Supabase (uid is sourced server-side from the token)
       await fetch('/api/user', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
-          firebase_uid: firebaseUser.uid,
           name: firebaseUser.displayName,
           email: firebaseUser.email,
         }),

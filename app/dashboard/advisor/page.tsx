@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { getUser } from '@/lib/supabase'
+import { useUser } from '@/contexts/UserContext'
 import { formatCurrency } from '@/lib/utils'
 import Button from '@/components/ui/Button'
 import { Send, Bot, RefreshCw } from 'lucide-react'
+import { auth } from '@/lib/firebase'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -23,6 +24,9 @@ const SUGGESTED_QUESTIONS = [
 
 export default function AdvisorPage() {
   const { user } = useAuth()
+  const { profile } = useUser()
+  const monthlyIncome = Number(profile?.monthly_pocket_money ?? 0)
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -31,14 +35,8 @@ export default function AdvisorPage() {
   ])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
-  const [monthlyIncome, setMonthlyIncome] = useState<number>(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    if (!user) return
-    getUser(user.uid).then(({ data }) => setMonthlyIncome(Number(data?.monthly_pocket_money ?? 0)))
-  }, [user])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -62,9 +60,15 @@ export default function AdvisorPage() {
         ? `The student's monthly pocket money is ${formatCurrency(monthlyIncome)}.`
         : ''
 
+      // Get fresh ID token for server-side auth verification
+      const idToken = auth ? await auth.currentUser?.getIdToken() : null
+
       const res = await fetch('/api/advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
         body: JSON.stringify({
           messages: newMessages,
           userContext,

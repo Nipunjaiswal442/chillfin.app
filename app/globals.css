@@ -107,6 +107,27 @@ body::after {
   animation: fadeUp 0.4s ease-out both;
 }
 
+/* Mobile: leave room for the hamburger toggle button (fixed top-4 left-4) */
+@media (max-width: 1023px) {
+  .page-enter {
+    padding-top: 3.5rem; /* 56px — clears the hamburger button */
+  }
+}
+
+/* Prevent any card from overflowing its column on small screens */
+.space-y-6 > *,
+.space-y-8 > * {
+  min-width: 0;
+}
+
+/* Ensure grid columns don't force horizontal scroll on xs screens */
+@media (max-width: 480px) {
+  .grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
 /* Gradient text utility */
 .text-gradient-gold {
   background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold) 40%, var(--gold-dark) 100%);

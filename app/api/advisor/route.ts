@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { verifyIdToken } from '@/lib/firebase-admin'
 
 const NVIDIA_API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions'
 const SYSTEM_PROMPT = `You are ChillFin AI, a highly intelligent, empathetic, and friendly financial advisor built specifically for Indian college students aged 17–24.
@@ -49,6 +50,14 @@ const createSSEMessage = (content: string) => {
 }
 
 export async function POST(request: NextRequest) {
+  // ─── Verify Firebase ID token ────────────────────────────────────────
+  try {
+    const token = request.headers.get('Authorization')?.replace('Bearer ', '')
+    await verifyIdToken(token)
+  } catch {
+    return createSSEMessage('⚠️ **Unauthorized:** Please sign in to use the AI Advisor.')
+  }
+
   const apiKey = process.env.NVIDIA_API_KEY
   if (!apiKey) {
     return createSSEMessage("⚠️ **Deployment Error:** Wait, my AI brain can't connect! The `NVIDIA_API_KEY` is missing in your Netlify Environment Variables. Please add the API key in the Netlify Dashboard and trigger a redeploy!")

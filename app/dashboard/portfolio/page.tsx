@@ -1,5 +1,9 @@
 'use client'
 
+import Link from 'next/link'
+import { useUser } from '@/contexts/UserContext'
+import { formatCurrency } from '@/lib/utils'
+
 const INVESTMENT_OPTIONS = [
   {
     icon: '📊',
@@ -90,12 +94,48 @@ const RISK_LEVELS = [
 ]
 
 export default function PortfolioPage() {
+  const { profile, budgetPlan, profileLoading } = useUser()
+  const monthlyIncome = Number(profile?.monthly_pocket_money ?? 0)
+  const investableSurplus = budgetPlan ? Number(budgetPlan.savings_amount) : Math.round(monthlyIncome * 0.2)
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="font-playfair font-bold text-2xl text-neon-white">Investment Portfolio</h1>
         <p className="text-text-muted text-sm mt-1">Beginner-safe, SEBI-aligned options for student investors</p>
       </div>
+
+      {/* Dynamic investable surplus */}
+      {!profileLoading && monthlyIncome > 0 ? (
+        <div className="bg-gradient-to-r from-gold/8 to-green-500/5 border border-gold/15 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gold/12 border border-gold/20 flex items-center justify-center text-xl flex-shrink-0">💎</div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-text-muted">Your Investable Surplus</p>
+              <p className="text-2xl font-playfair font-bold text-gold-light">{formatCurrency(investableSurplus)}</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                {budgetPlan ? 'From your saved budget plan (20% savings allocation)' : '20% of your pocket money (set a budget plan to customise)'}
+              </p>
+            </div>
+          </div>
+          <div className="sm:ml-auto text-right flex-shrink-0">
+            <p className="text-xs text-text-muted mb-1">Monthly income: {formatCurrency(monthlyIncome)}</p>
+            <Link href="/dashboard/budget" className="text-xs text-gold border border-gold/25 px-3 py-1.5 rounded-lg hover:bg-gold/10 transition-all inline-block">
+              {budgetPlan ? 'Edit Budget →' : 'Set Up Budget →'}
+            </Link>
+          </div>
+        </div>
+      ) : !profileLoading ? (
+        <div className="bg-gold/5 border border-gold/12 rounded-2xl p-4 flex items-center gap-3">
+          <span className="text-xl">⚡</span>
+          <p className="text-sm text-text-muted">
+            <Link href="/dashboard/budget" className="text-gold-light hover:underline">Set your monthly pocket money</Link>{' '}
+            to see your personalised investable surplus.
+          </p>
+        </div>
+      ) : (
+        <div className="h-20 bg-bg-card rounded-2xl animate-pulse border border-metallic-grey/30" />
+      )}
 
       {/* Disclaimer */}
       <div className="bg-gold/5 border border-gold/15 rounded-2xl p-4">

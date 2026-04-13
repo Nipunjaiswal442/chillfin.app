@@ -11,7 +11,7 @@ export function useTransactions(firebaseUid: string | undefined) {
   const fetchTransactions = useCallback(async () => {
     if (!firebaseUid) return
     setLoading(true)
-    const { data, error } = await getTransactions(firebaseUid)
+    const { data, error } = await getTransactions(firebaseUid, 500)
     if (error) {
       setError(error.message)
     } else {
