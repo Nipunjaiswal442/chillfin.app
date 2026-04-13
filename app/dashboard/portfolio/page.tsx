@@ -1,11 +1,14 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/UserContext'
 import { formatCurrency } from '@/lib/utils'
+import { TrendingUp } from 'lucide-react'
 
 const INVESTMENT_OPTIONS = [
   {
+    id: 'sip',
     icon: '📊',
     title: 'SIP (Systematic Investment Plan)',
     risk: 'Medium',
@@ -19,6 +22,7 @@ const INVESTMENT_OPTIONS = [
     tag: 'Recommended for Beginners',
   },
   {
+    id: 'gold',
     icon: '🥇',
     title: 'Digital Gold',
     risk: 'Medium',
@@ -32,6 +36,7 @@ const INVESTMENT_OPTIONS = [
     tag: 'Safe & Liquid',
   },
   {
+    id: 'liquid',
     icon: '💧',
     title: 'Liquid Mutual Funds',
     risk: 'Low',
@@ -45,6 +50,7 @@ const INVESTMENT_OPTIONS = [
     tag: 'Emergency Fund',
   },
   {
+    id: 'fd',
     icon: '🏛️',
     title: 'Government RD / FD',
     risk: 'Zero',
@@ -58,6 +64,7 @@ const INVESTMENT_OPTIONS = [
     tag: 'Zero Risk',
   },
   {
+    id: 'index',
     icon: '📈',
     title: 'Index Funds (Nifty 50)',
     risk: 'Medium-High',
@@ -71,6 +78,7 @@ const INVESTMENT_OPTIONS = [
     tag: '5+ Year Horizon',
   },
   {
+    id: 'ppf',
     icon: '💼',
     title: 'PPF (Public Provident Fund)',
     risk: 'Zero',
@@ -94,6 +102,7 @@ const RISK_LEVELS = [
 ]
 
 export default function PortfolioPage() {
+  const router = useRouter()
   const { profile, budgetPlan, profileLoading } = useUser()
   const monthlyIncome = Number(profile?.monthly_pocket_money ?? 0)
   const investableSurplus = budgetPlan ? Number(budgetPlan.savings_amount) : Math.round(monthlyIncome * 0.2)
@@ -206,6 +215,15 @@ export default function PortfolioPage() {
               <span className="w-3.5 h-3.5 border border-gold/30 rounded text-center text-[9px] leading-3.5">↗</span>
               {opt.linkLabel}
             </a>
+
+            {/* Calculate Returns button */}
+            <button
+              onClick={() => router.push(`/dashboard/portfolio/calculator?id=${opt.id}`)}
+              className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-gold/10 border border-gold/20 text-gold-light text-xs font-semibold hover:bg-gold/18 active:scale-[0.98] transition-all duration-200"
+            >
+              <TrendingUp size={13} />
+              Calculate Returns →
+            </button>
           </div>
         ))}
       </div>

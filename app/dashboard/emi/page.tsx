@@ -1,11 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
 import { getUser, saveEMICalculation, getEMIHistory, EMICalculation } from '@/lib/supabase'
 import { formatCurrency, formatDate, calculateEMI, calculateAffordabilityScore, getAffordabilityLabel } from '@/lib/utils'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
+import { buildAmortisationData } from '@/components/charts/AmortisationChart'
+
+const EMIBreakdownChart = dynamic(() => import('@/components/charts/EMIBreakdownChart'), { ssr: false })
+const AmortisationChart = dynamic(() => import('@/components/charts/AmortisationChart'), { ssr: false })
 
 export default function EMIPage() {
   const { user } = useAuth()
@@ -165,6 +170,21 @@ export default function EMIPage() {
                     </span>
                   </div>
                 ))}
+              </div>
+              {/* EMI Charts */}
+              <div className="grid lg:grid-cols-2 gap-4">
+                <div className="bg-bg-card border border-metallic-grey/20 rounded-2xl p-5">
+                  <h3 className="font-playfair font-bold text-sm text-neon-white mb-3">Principal vs Interest</h3>
+                  <EMIBreakdownChart principal={parseFloat(form.principal) || 0} totalInterest={result.totalInterest} />
+                </div>
+                <div className="bg-bg-card border border-metallic-grey/20 rounded-2xl p-5">
+                  <h3 className="font-playfair font-bold text-sm text-neon-white mb-3">Balance Over Time</h3>
+                  <AmortisationChart data={buildAmortisationData(
+                    parseFloat(form.principal) || 0,
+                    parseFloat(form.interest_rate) || 0,
+                    parseInt(form.tenure_months) || 1
+                  )} />
+                </div>
               </div>
             </>
           ) : (

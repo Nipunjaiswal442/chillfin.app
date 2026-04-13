@@ -1,12 +1,16 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
 import { useTransactions } from '@/hooks/useTransactions'
 import { getUser, upsertBudgetPlan, getBudgetPlan, updateUser, BudgetPlan } from '@/lib/supabase'
 import { formatCurrency, generateBudget, getCurrentMonthYear, getMonthName } from '@/lib/utils'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
+
+const BudgetBarChart = dynamic(() => import('@/components/charts/BudgetBarChart').then(m => ({ default: m.BudgetBarChart })), { ssr: false })
+const AllocationPieChart = dynamic(() => import('@/components/charts/BudgetBarChart').then(m => ({ default: m.AllocationPieChart })), { ssr: false })
 
 interface BudgetCategory {
   key: 'needs' | 'wants' | 'savings'
@@ -224,6 +228,28 @@ export default function BudgetPage() {
               </div>
             </div>
           </div>
+
+          {/* Charts section */}
+          {plan && monthlyIncome > 0 && (
+            <div className="grid lg:grid-cols-2 gap-4">
+              <div className="bg-bg-card border border-metallic-grey/20 rounded-2xl p-5">
+                <h2 className="font-playfair font-bold text-sm text-neon-white mb-4">Budget Allocation (50/30/20)</h2>
+                <AllocationPieChart data={[
+                  { name: 'Needs 50%', value: plan.needs_amount },
+                  { name: 'Wants 30%', value: plan.wants_amount },
+                  { name: 'Save 20%', value: plan.savings_amount },
+                ]} />
+              </div>
+              <div className="bg-bg-card border border-metallic-grey/20 rounded-2xl p-5">
+                <h2 className="font-playfair font-bold text-sm text-neon-white mb-4">Actual vs Budget</h2>
+                <BudgetBarChart data={[
+                  { name: 'Needs', budgeted: plan.needs_amount, actual: actuals.needs, color: '#D4A843' },
+                  { name: 'Wants', budgeted: plan.wants_amount, actual: actuals.wants, color: '#C0C0C0' },
+                  { name: 'Savings', budgeted: plan.savings_amount, actual: actuals.savings, color: '#22c55e' },
+                ]} />
+              </div>
+            </div>
+          )}
 
           {/* Info */}
           <div className="bg-bg-deep border border-metallic-grey/20 rounded-xl p-4">

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
 import { useTransactions } from '@/hooks/useTransactions'
 import { formatCurrency, formatDate, getCategoryEmoji, getCategoryLabel, EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCurrentMonthYear } from '@/lib/utils'
@@ -9,6 +10,8 @@ import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
 import StatCard from '@/components/ui/StatCard'
 import { Plus, Trash2, Filter } from 'lucide-react'
+
+const CategoryPieChart = dynamic(() => import('@/components/charts/CategoryPieChart'), { ssr: false })
 
 type TxType = 'expense' | 'income'
 
@@ -82,6 +85,21 @@ export default function TrackerPage() {
         <StatCard label="Total Expenses" value={formatCurrency(totalExpense)} icon="📉" trend="down" />
         <StatCard label="This Month" value={formatCurrency(thisMonthExpense)} icon="📅" />
       </div>
+
+      {/* Expense Breakdown Chart */}
+      {(() => {
+        const expenseTx = transactions.filter(t => t.type === 'expense')
+        if (!expenseTx.length) return null
+        const catMap: Record<string, number> = {}
+        expenseTx.forEach(t => { catMap[getCategoryLabel(t.category)] = (catMap[getCategoryLabel(t.category)] || 0) + Number(t.amount) })
+        const pieData = Object.entries(catMap).map(([name, value]) => ({ name, value }))
+        return (
+          <div className="bg-bg-card border border-metallic-grey/20 rounded-2xl p-5">
+            <h2 className="font-playfair font-bold text-base text-neon-white mb-4">Spending by Category</h2>
+            <CategoryPieChart data={pieData} />
+          </div>
+        )
+      })()}
 
       {/* Filter */}
       <div className="flex gap-2">

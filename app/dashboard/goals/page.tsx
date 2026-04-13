@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
 import { getGoals, addGoal, deleteGoal, updateGoalSaved, Goal } from '@/lib/supabase'
 import { formatCurrency, formatDate } from '@/lib/utils'
@@ -8,6 +9,8 @@ import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
 import { Plus, Trash2, Plus as PlusCircle } from 'lucide-react'
+
+const GoalProgressChart = dynamic(() => import('@/components/charts/GoalProgressChart'), { ssr: false })
 
 const EMOJIS = ['🎯', '💻', '✈️', '🎮', '📚', '👟', '🏍️', '📱', '🎸', '💎', '🏠', '🌏']
 
@@ -99,6 +102,19 @@ export default function GoalsPage() {
             <p className="text-xs text-text-muted uppercase tracking-wider mb-1">Completed</p>
             <p className="text-xl font-playfair font-bold text-green-400">{completed}/{goals.length}</p>
           </div>
+        </div>
+      )}
+
+      {/* Goal Progress Chart */}
+      {goals.length > 1 && (
+        <div className="bg-bg-card border border-metallic-grey/20 rounded-2xl p-5">
+          <h2 className="font-playfair font-bold text-base text-neon-white mb-4">Goal Progress Overview</h2>
+          <GoalProgressChart data={goals.map(g => ({
+            name: `${g.emoji} ${g.name.slice(0, 12)}${g.name.length > 12 ? '…' : ''}`,
+            saved: Number(g.saved_amount),
+            remaining: Math.max(0, Number(g.target_amount) - Number(g.saved_amount)),
+            pct: Math.min(100, (Number(g.saved_amount) / Number(g.target_amount)) * 100),
+          }))} />
         </div>
       )}
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
@@ -8,6 +9,8 @@ import { useTransactions } from '@/hooks/useTransactions'
 import { formatCurrency, formatCurrencyShort, getCurrentMonthYear, getMonthName } from '@/lib/utils'
 import StatCard from '@/components/ui/StatCard'
 import { Wallet, PieChart, Target, Calculator, TrendingUp, Bot, ArrowRight, Plus } from 'lucide-react'
+
+const MonthlyTrendChart = dynamic(() => import('@/components/charts/MonthlyTrendChart'), { ssr: false })
 
 const QUICK_LINKS = [
   { href: '/dashboard/tracker', icon: Wallet, label: 'Add Expense', color: 'text-gold' },
@@ -51,6 +54,18 @@ export default function DashboardPage() {
     ? budgetPlan.needs_amount + budgetPlan.wants_amount
     : Math.round(monthlyIncome * 0.8)
 
+  // Build last-6-months trend data
+  const trendData = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - (5 - i))
+    const m = d.getMonth() + 1
+    const y = d.getFullYear()
+    const label = d.toLocaleString('default', { month: 'short' })
+    const income = transactions.filter(t => { const td = new Date(t.date); return t.type === 'income' && td.getMonth() + 1 === m && td.getFullYear() === y }).reduce((s, t) => s + Number(t.amount), 0)
+    const expense = transactions.filter(t => { const td = new Date(t.date); return t.type === 'expense' && td.getMonth() + 1 === m && td.getFullYear() === y }).reduce((s, t) => s + Number(t.amount), 0)
+    return { month: label, income, expense }
+  })
+  const hasTrendData = trendData.some(d => d.income > 0 || d.expense > 0)
   const recentTx = transactions.slice(0, 5)
 
   return (
@@ -144,6 +159,17 @@ export default function DashboardPage() {
               ? `${formatCurrency(spendingBudget - thisMonthExpense)} remaining`
               : `${formatCurrency(thisMonthExpense - spendingBudget)} over budget`}
           </p>
+        </div>
+      )}
+
+      {/* Monthly Trend Chart */}
+      {!txLoading && hasTrendData && (
+        <div className="bg-bg-card border border-[rgba(212,168,67,0.06)] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-playfair font-bold text-base text-neon-white">6-Month Spending Trend</h2>
+            <span className="text-xs text-text-muted">Income vs Expenses</span>
+          </div>
+          <MonthlyTrendChart data={trendData} />
         </div>
       )}
 
