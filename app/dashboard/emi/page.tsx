@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
-import { getUser, saveEMICalculation, getEMIHistory, EMICalculation } from '@/lib/supabase'
+import { apiGetUser, apiSaveEMICalculation, apiGetEMIHistory, EMICalculation } from '@/lib/api-client'
 import { formatCurrency, formatDate, calculateEMI, calculateAffordabilityScore, getAffordabilityLabel } from '@/lib/utils'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -35,8 +35,8 @@ export default function EMIPage() {
 
   useEffect(() => {
     if (!user) return
-    getUser(user.uid).then(({ data }) => setMonthlyIncome(Number(data?.monthly_pocket_money ?? 0)))
-    getEMIHistory(user.uid).then(({ data }) => setHistory((data as EMICalculation[]) || []))
+    apiGetUser().then(({ user: u }) => setMonthlyIncome(Number(u?.monthly_pocket_money ?? 0)))
+    apiGetEMIHistory().then(({ emiHistory }) => setHistory(emiHistory || []))
   }, [user])
 
   const handleCalculate = async (e: React.FormEvent) => {
@@ -55,8 +55,7 @@ export default function EMIPage() {
 
     // Save to history
     if (user) {
-      const calc: EMICalculation = {
-        firebase_uid: user.uid,
+      const calc: Omit<EMICalculation, 'id' | 'created_at' | 'firebase_uid'> = {
         item_name: form.item_name || undefined,
         principal: P,
         interest_rate: r || 0,
@@ -65,8 +64,8 @@ export default function EMIPage() {
         total_cost: totalCost,
         affordability_score: affordabilityScore,
       }
-      const { data } = await saveEMICalculation(calc)
-      if (data) setHistory((prev) => [data as EMICalculation, ...prev.slice(0, 9)])
+      const { emiCalculation } = await apiSaveEMICalculation(calc)
+      if (emiCalculation) setHistory((prev) => [emiCalculation, ...prev.slice(0, 9)])
     }
     setCalculating(false)
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSupabase } from '@/lib/supabase'
+import { getSupabaseServer } from '@/lib/supabase-server'
 import { verifyIdToken } from '@/lib/firebase-admin'
 
 // ─── Helper: extract + verify token ──────────────────────────────────────────
@@ -23,10 +23,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const supabase = getSupabase()
-    if (!supabase) {
-      return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
-    }
+    const supabase = getSupabaseServer()
 
     const body = await request.json()
     // uid is sourced from the verified token — never trust the request body for uid
@@ -66,10 +63,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized — valid Firebase ID token required' }, { status: 401 })
   }
 
-  const supabase = getSupabase()
-  if (!supabase) {
-    return NextResponse.json({ error: 'Supabase environment variables not configured' }, { status: 500 })
-  }
+  const supabase = getSupabaseServer()
 
   // Always use the verified uid — ignore query param to prevent data leakage
   const { data, error } = await supabase

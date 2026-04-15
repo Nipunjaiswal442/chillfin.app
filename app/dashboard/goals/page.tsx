@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
-import { getGoals, addGoal, deleteGoal, updateGoalSaved, Goal } from '@/lib/supabase'
+import { apiGetGoals, apiAddGoal, apiDeleteGoal, apiUpdateGoalSaved, Goal } from '@/lib/api-client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -32,32 +32,33 @@ export default function GoalsPage() {
 
   useEffect(() => {
     if (!user) return
-    getGoals(user.uid).then(({ data }) => {
-      setGoals((data as Goal[]) || [])
+    apiGetGoals().then(({ goals: data }) => {
+      setGoals(data || [])
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [user])
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!user || !form.name || !form.target_amount) return
     setSubmitting(true)
-    const { data } = await addGoal({
-      firebase_uid: user.uid,
-      name: form.name,
-      target_amount: parseFloat(form.target_amount),
-      saved_amount: 0,
-      target_date: form.target_date || null,
-      emoji: form.emoji,
-    })
-    if (data) setGoals((prev) => [...prev, data as Goal])
+    try {
+      const { goal } = await apiAddGoal({
+        name: form.name,
+        target_amount: parseFloat(form.target_amount),
+        saved_amount: 0,
+        target_date: form.target_date || null,
+        emoji: form.emoji,
+      })
+      setGoals((prev) => [...prev, goal])
+    } catch { /* ignore */ }
     setForm({ name: '', target_amount: '', target_date: '', emoji: '🎯' })
     setAddModal(false)
     setSubmitting(false)
   }
 
   const handleDelete = async (id: string) => {
-    await deleteGoal(id)
+    await apiDeleteGoal(id)
     setGoals((prev) => prev.filter((g) => g.id !== id))
   }
 
@@ -65,7 +66,7 @@ export default function GoalsPage() {
     const amount = parseFloat(savingsInput)
     if (!amount || amount <= 0 || !goal.id) return
     const newSaved = Number(goal.saved_amount) + amount
-    await updateGoalSaved(goal.id, newSaved)
+    await apiUpdateGoalSaved(goal.id, newSaved)
     setGoals((prev) => prev.map((g) => g.id === goal.id ? { ...g, saved_amount: newSaved } : g))
     setSavingsInput('')
     setAddSavingsId(null)

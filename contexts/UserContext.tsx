@@ -12,9 +12,15 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import {
-  getUser, getGoals, getBudgetPlan, updateUser, upsertBudgetPlan,
-  UserProfile, Goal, BudgetPlan,
-} from '@/lib/supabase'
+  apiGetUser,
+  apiUpsertUser,
+  apiGetGoals,
+  apiGetBudgetPlan,
+  apiUpsertBudgetPlan,
+  UserProfile,
+  Goal,
+  BudgetPlan,
+} from '@/lib/api-client'
 import { getCurrentMonthYear, generateBudget } from '@/lib/utils'
 
 interface UserContextValue {
@@ -56,19 +62,27 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const fetchProfile = useCallback(async () => {
     if (!user) return
     setProfileLoading(true)
-    const [{ data: u }, { data: b }] = await Promise.all([
-      getUser(user.uid),
-      getBudgetPlan(user.uid, month, year),
-    ])
-    setProfile(u as UserProfile | null)
-    setBudgetPlan(b as BudgetPlan | null)
+    try {
+      const [{ user: u }, { budgetPlan: b }] = await Promise.all([
+        apiGetUser(),
+        apiGetBudgetPlan(month, year),
+      ])
+      setProfile(u as UserProfile | null)
+      setBudgetPlan(b as BudgetPlan | null)
+    } catch {
+      // silently ignore — user may not have a profile yet
+    }
     setProfileLoading(false)
   }, [user, month, year])
 
   const fetchGoals = useCallback(async () => {
     if (!user) return
-    const { data } = await getGoals(user.uid)
-    setGoals((data as Goal[]) || [])
+    try {
+      const { goals: data } = await apiGetGoals()
+      setGoals(data || [])
+    } catch {
+      // ignore
+    }
   }, [user])
 
   useEffect(() => {
@@ -87,8 +101,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const setMonthlyIncomeAndBudget = useCallback(async (income: number) => {
     if (!user || income <= 0) return
     const generated = generateBudget(income)
-    const newPlan: BudgetPlan = {
-      firebase_uid: user.uid,
+    const newPlan: Omit<BudgetPlan, 'id' | 'firebase_uid'> = {
       month,
       year,
       needs_amount: generated.needs_amount,
@@ -97,11 +110,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
     // Optimistic update
     setProfile((prev) => prev ? { ...prev, monthly_pocket_money: income } : prev)
-    setBudgetPlan(newPlan)
-    // Persist
+    setBudgetPlan({ firebase_uid: user.uid, ...newPlan })
+    // Persist via API routes
     await Promise.all([
-      updateUser(user.uid, { monthly_pocket_money: income }),
-      upsertBudgetPlan(newPlan),
+      apiUpsertUser({ monthly_pocket_money: income }),
+      apiUpsertBudgetPlan(newPlan),
     ])
     // Revalidate from DB
     fetchProfile()
@@ -128,3 +141,4 @@ export function UserProvider({ children }: { children: ReactNode }) {
 export function useUser() {
   return useContext(UserContext)
 }
+

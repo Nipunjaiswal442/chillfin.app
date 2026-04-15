@@ -48,7 +48,6 @@ export default function TrackerPage() {
     if (!user || !form.amount) return
     setSubmitting(true)
     await add({
-      firebase_uid: user.uid,
       type: form.type,
       amount: parseFloat(form.amount),
       category: form.category,

@@ -1,82 +1,60 @@
 -- ─────────────────────────────────────────────────────────────────────
--- ChillFin — Row Level Security Migration
+-- ChillFin — Row Level Security (Production)
 -- Run this in: Supabase Dashboard → SQL Editor
 --
--- PREREQUISITE: You must first configure Supabase to accept Firebase JWTs:
---   1. Go to Supabase Dashboard → Authentication → JWT Settings
---   2. Set "JWT Secret" to your Firebase project's Web API Key
---      (Firebase Console → Project Settings → General → Web API Key)
---   3. Then run this SQL.
+-- ARCHITECTURE:
+--   The app uses Firebase for auth and Supabase for storage.
+--   All DB writes go through Next.js API routes that:
+--     1. Verify the Firebase ID token (Firebase Admin SDK)
+--     2. Query Supabase using the service_role key (bypasses RLS)
+--   The anon key is NO LONGER used for any data operations.
 --
--- Until you complete the prerequisite, data access continues to work
--- through the anon key exactly as before. This SQL is safe to run
--- at any time; it just won't enforce per-user isolation until JWTs
--- are verified by Supabase.
+-- WHY WE STILL ENABLE RLS:
+--   Defence-in-depth. Even if a bug exposed the anon key, RLS blocks
+--   direct table access since no anon-permissive policies exist.
 -- ─────────────────────────────────────────────────────────────────────
 
 -- ─── Step 1: Enable RLS on all tables ─────────────────────────────────
 
-ALTER TABLE users               ENABLE ROW LEVEL SECURITY;
-ALTER TABLE transactions        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE budget_plans        ENABLE ROW LEVEL SECURITY;
-ALTER TABLE goals               ENABLE ROW LEVEL SECURITY;
-ALTER TABLE emi_calculations    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.budget_plans        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.goals               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.emi_calculations    ENABLE ROW LEVEL SECURITY;
 
--- ─── Step 2: Drop old permissive policies (if any exist) ──────────────
+-- ─── Step 2: Drop any old permissive/fallback policies ────────────────
 
-DROP POLICY IF EXISTS "anon_access_users"            ON users;
-DROP POLICY IF EXISTS "anon_access_transactions"     ON transactions;
-DROP POLICY IF EXISTS "anon_access_budget_plans"     ON budget_plans;
-DROP POLICY IF EXISTS "anon_access_goals"            ON goals;
-DROP POLICY IF EXISTS "anon_access_emi_calculations" ON emi_calculations;
+DROP POLICY IF EXISTS "anon_access_users"            ON public.users;
+DROP POLICY IF EXISTS "anon_access_transactions"     ON public.transactions;
+DROP POLICY IF EXISTS "anon_access_budget_plans"     ON public.budget_plans;
+DROP POLICY IF EXISTS "anon_access_goals"            ON public.goals;
+DROP POLICY IF EXISTS "anon_access_emi_calculations" ON public.emi_calculations;
 
--- ─── Step 3: Create per-user policies ─────────────────────────────────
+DROP POLICY IF EXISTS "users_own_data"            ON public.users;
+DROP POLICY IF EXISTS "transactions_own_data"     ON public.transactions;
+DROP POLICY IF EXISTS "budget_plans_own_data"     ON public.budget_plans;
+DROP POLICY IF EXISTS "goals_own_data"            ON public.goals;
+DROP POLICY IF EXISTS "emi_own_data"              ON public.emi_calculations;
+
+-- ─── Step 3: No anon policies — service_role bypasses RLS ─────────────
 --
--- These policies extract the Firebase UID from the JWT sub claim.
--- They only become effective after the JWT Secret is configured (Step 0).
+-- The service_role key used by our API routes automatically bypasses
+-- ALL Row Level Security policies. No policies are needed. Any direct
+-- request using the anon/public key will be BLOCKED by default (RLS
+-- denies all access when no matching policy exists).
 --
--- Until the JWT is configured, Supabase treats anonymous requests as
--- having no auth() context, so the policies below won't match —
--- add the permissive fallback policies in Step 4 to maintain access.
-
-CREATE POLICY "users_own_data" ON users
-  FOR ALL USING (firebase_uid = (auth.jwt() ->> 'sub'));
-
-CREATE POLICY "transactions_own_data" ON transactions
-  FOR ALL USING (firebase_uid = (auth.jwt() ->> 'sub'));
-
-CREATE POLICY "budget_plans_own_data" ON budget_plans
-  FOR ALL USING (firebase_uid = (auth.jwt() ->> 'sub'));
-
-CREATE POLICY "goals_own_data" ON goals
-  FOR ALL USING (firebase_uid = (auth.jwt() ->> 'sub'));
-
-CREATE POLICY "emi_own_data" ON emi_calculations
-  FOR ALL USING (firebase_uid = (auth.jwt() ->> 'sub'));
-
--- ─── Step 4: Permissive fallback for anon key (MVP safety net) ─────────
---
--- Remove these once you've validated JWT-based access works end-to-end.
--- While these exist, authenticated users AND anonymous requests have
--- read/write access — the per-user policies above narrow it per-user.
-
-CREATE POLICY "anon_access_users" ON users
-  FOR ALL TO anon USING (true) WITH CHECK (true);
-
-CREATE POLICY "anon_access_transactions" ON transactions
-  FOR ALL TO anon USING (true) WITH CHECK (true);
-
-CREATE POLICY "anon_access_budget_plans" ON budget_plans
-  FOR ALL TO anon USING (true) WITH CHECK (true);
-
-CREATE POLICY "anon_access_goals" ON goals
-  FOR ALL TO anon USING (true) WITH CHECK (true);
-
-CREATE POLICY "anon_access_emi_calculations" ON emi_calculations
-  FOR ALL TO anon USING (true) WITH CHECK (true);
+-- This gives us defence-in-depth:
+--   • API routes (service_role) → always works ✓
+--   • Direct anon key access    → blocked by RLS ✓
+--   • Anyone without a key      → blocked by Supabase auth ✓
 
 -- ─── Verification ──────────────────────────────────────────────────────
--- After running, confirm with:
---   SELECT tablename, rowsecurity FROM pg_tables
---   WHERE schemaname = 'public';
+-- Run after applying to confirm RLS is enabled on all tables:
+--
+--   SELECT tablename, rowsecurity
+--   FROM pg_tables
+--   WHERE schemaname = 'public'
+--   ORDER BY tablename;
+--
 -- All 5 tables should show rowsecurity = true.
+-- Policy list should be empty (no anon policies).

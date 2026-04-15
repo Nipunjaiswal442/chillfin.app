@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
 import { useTransactions } from '@/hooks/useTransactions'
-import { getUser, upsertBudgetPlan, getBudgetPlan, updateUser, BudgetPlan } from '@/lib/supabase'
+import { apiGetUser, apiUpsertUser, apiGetBudgetPlan, apiUpsertBudgetPlan, BudgetPlan } from '@/lib/api-client'
 import { formatCurrency, generateBudget, getCurrentMonthYear, getMonthName } from '@/lib/utils'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
@@ -42,9 +42,9 @@ export default function BudgetPage() {
   useEffect(() => {
     if (!user) return
     Promise.all([
-      getUser(user.uid),
-      getBudgetPlan(user.uid, month, year),
-    ]).then(([{ data: u }, { data: b }]) => {
+      apiGetUser(),
+      apiGetBudgetPlan(month, year),
+    ]).then(([{ user: u }, { budgetPlan: b }]) => {
       const income = Number(u?.monthly_pocket_money ?? 0)
       setMonthlyIncome(income)
       setIncomeInput(String(income))
@@ -52,20 +52,19 @@ export default function BudgetPage() {
         setPlan(b as BudgetPlan)
       } else if (income > 0) {
         const generated = generateBudget(income)
-        const newPlan: BudgetPlan = {
-          firebase_uid: user.uid,
+        const newPlan: Omit<BudgetPlan, 'id' | 'firebase_uid'> = {
           month,
           year,
           needs_amount: generated.needs_amount,
           wants_amount: generated.wants_amount,
           savings_amount: generated.savings_amount,
         }
-        upsertBudgetPlan(newPlan).then(({ data }) => {
+        apiUpsertBudgetPlan(newPlan).then(({ budgetPlan: data }) => {
           if (data) setPlan(data as BudgetPlan)
         })
       }
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [user, month, year])
 
   const handleUpdateIncome = async () => {
@@ -74,8 +73,7 @@ export default function BudgetPage() {
     if (!income || income <= 0) return
     setSaving(true)
     const generated = generateBudget(income)
-    const newPlan: BudgetPlan = {
-      firebase_uid: user.uid,
+    const newPlan: Omit<BudgetPlan, 'id' | 'firebase_uid'> = {
       month,
       year,
       needs_amount: generated.needs_amount,
@@ -83,11 +81,11 @@ export default function BudgetPage() {
       savings_amount: generated.savings_amount,
     }
     await Promise.all([
-      updateUser(user.uid, { monthly_pocket_money: income }),
-      upsertBudgetPlan(newPlan),
+      apiUpsertUser({ monthly_pocket_money: income }),
+      apiUpsertBudgetPlan(newPlan),
     ])
     setMonthlyIncome(income)
-    setPlan(newPlan)
+    setPlan({ firebase_uid: user.uid, ...newPlan })
     setSaving(false)
     refetchProfile()   // sync shared UserContext so dashboard reflects new budget
   }
