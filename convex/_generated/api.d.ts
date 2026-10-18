@@ -18,6 +18,7 @@ import type * as budget from "../budget.js";
 import type * as emi from "../emi.js";
 import type * as goals from "../goals.js";
 import type * as helpers from "../helpers.js";
+import type * as migration from "../migration.js";
 import type * as transactions from "../transactions.js";
 import type * as users from "../users.js";
 
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   emi: typeof emi;
   goals: typeof goals;
   helpers: typeof helpers;
+  migration: typeof migration;
   transactions: typeof transactions;
   users: typeof users;
 }>;
