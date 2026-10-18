@@ -49,7 +49,7 @@ const UserContext = createContext<UserContextValue>({
 })
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const { isAuthenticated } = useConvexAuth()
+  const { isLoading: authLoading, isAuthenticated } = useConvexAuth()
   const { month, year } = getCurrentMonthYear()
 
   const args = isAuthenticated ? {} : 'skip'
@@ -91,6 +91,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
         setMonthlyIncomeAndBudget,
       }}
     >
+      {/* Signed in with Google, but Convex rejected the token (usually a missing
+          FIREBASE_PROJECT_ID on the Convex deployment) — say so instead of
+          showing loading skeletons forever */}
+      {!authLoading && !isAuthenticated && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)] bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-xl px-4 py-3 backdrop-blur">
+          ⚠️ We couldn&apos;t connect your account to the database. Please sign out and sign in again.
+        </div>
+      )}
       {children}
     </UserContext.Provider>
   )

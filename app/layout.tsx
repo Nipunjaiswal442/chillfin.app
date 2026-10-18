@@ -25,6 +25,7 @@ export const metadata: Metadata = {
   description:
     'Track spending, plan budgets, save for goals, and learn to invest — all in one student-first financial app.',
   keywords: 'student finance, budget planner, pocket money tracker, investment, college students, India',
+  icons: { icon: '/favicon.svg' },
   openGraph: {
     title: 'ChillFin — Your Money, Your Rules',
     description: 'The student-first financial companion. Free. Smart. Built for you.',
