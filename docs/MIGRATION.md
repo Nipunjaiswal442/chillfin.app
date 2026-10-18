@@ -21,6 +21,11 @@ After:   Browser ◄─websocket─► Convex  (Convex verifies the Firebase ID 
 - A Convex account (https://dashboard.convex.dev) and a Vercel account linked to GitHub.
 - Access to the Firebase project (unchanged) and to the Supabase project `chillfin`.
 - ⚠️ **The Supabase project is currently paused** (status `INACTIVE` when checked on 2026-10-18). Restore it from the Supabase dashboard before exporting. If the dashboard no longer offers a restore, download a backup from *Database → Backups* instead. I don't know the current time limit Supabase applies to restoring paused free-tier projects, so check soon.
+- ⚠️ **Netlify is still connected to this repo** and builds every push and PR. **Before merging this branch into `main`:**
+  - On Netlify's *Deploys* page, lock the current production deploy (*Lock to stop auto publishing*) so the merge can't overwrite your rollback.
+  - Then stop builds (*Site configuration → Build & deploy → Stop builds*).
+
+  Netlify's deploy previews of this branch will show the "`NEXT_PUBLIC_CONVEX_URL` is not set" page. That's expected, because Netlify never runs `convex deploy`.
 
 ## Step 1: create the Convex project (dev)
 
@@ -91,6 +96,7 @@ In Firebase Console → *Authentication → Settings → Authorized domains*, ad
 
 ## Step 6: cutover
 
+0. Lock Netlify's production deploy and stop its builds (see Prerequisites), then merge this branch into `main`. Vercel builds production from `main`.
 1. With Supabase restored, run the Step 2 export again. Then import with `--prod` (and `--replace` if you rehearsed against prod):
    `npx convex import --prod --table users migration-data/users.jsonl` …
 2. Verify with `npx convex run migration:stats --prod`. It must match the export's source stats.
@@ -112,7 +118,7 @@ In Firebase Console → *Authentication → Settings → Authorized domains*, ad
 
 ## Rollback
 
-- **Before the DNS move:** nothing to roll back. The old Netlify site keeps working as long as Supabase is active.
+- **Before the DNS move:** nothing to roll back. The old Netlify site keeps working as long as Supabase is active and its production deploy is locked (otherwise merging this branch would replace it).
 - **After the DNS move:** point DNS back to Netlify and keep Supabase active. Any writes made in Convex after cutover would need manual reconciliation, which is why the cutover window should be short.
 
 ## How the pipeline works after migration
