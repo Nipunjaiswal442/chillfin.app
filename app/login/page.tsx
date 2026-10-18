@@ -32,25 +32,9 @@ export default function LoginPage() {
     }
 
     try {
-      const result = await signInWithPopup(auth, googleProvider)
-      const firebaseUser = result.user
-
-      // Get Firebase ID token to authenticate /api/user call
-      const idToken = await firebaseUser.getIdToken()
-
-      // Upsert user in Supabase (uid is sourced server-side from the token)
-      await fetch('/api/user', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          name: firebaseUser.displayName,
-          email: firebaseUser.email,
-        }),
-      })
-
+      await signInWithPopup(auth, googleProvider)
+      // The profile is created/filled in by `users.ensure` when the dashboard
+      // loads (it never resets saved income, unlike the old upsert here).
       router.replace('/dashboard')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign-in failed. Please try again.'
@@ -113,7 +97,7 @@ export default function LoginPage() {
                   ChillFin is not registered with SEBI or any other financial regulatory body. All investment information, AI responses, and projections are strictly illustrative and for educational purposes only.</p>
 
                   <p><strong className="text-neon-white">3. Data Usage</strong><br />
-                  We store your name, email, and financial data (transactions, budgets, goals) to power your dashboard. Your data is never sold to third parties. AI conversations may be processed by NVIDIA's API subject to their privacy policy.</p>
+                  We store your name, email, and financial data (transactions, budgets, goals) to power your dashboard. Your data is never sold to third parties. AI conversations may be processed by NVIDIA&apos;s API subject to their privacy policy.</p>
 
                   <p><strong className="text-neon-white">4. No Liability</strong><br />
                   ChillFin and its creators are not liable for any financial losses arising from use of this application. Always consult a SEBI-registered advisor before making investment decisions.</p>

@@ -4,37 +4,36 @@
  * UserContext — shared state for the authenticated user's profile, goals,
  * budget plan, and derived financial totals. Wraps all dashboard pages.
  *
+ * Backed by Convex reactive queries: any change (from this tab, another tab,
+ * or another device) updates every page automatically — no manual refetch.
+ *
  * Also exposes `setMonthlyIncomeAndBudget` which updates the user's income
  * AND auto-generates (or regenerates) the 50/30/20 budget plan for the
- * current month in one call — used by the Overview quick-setup panel.
+ * current month in one atomic mutation — used by the Overview quick-setup
+ * panel and the Budget page.
  */
 
-import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react'
-import { useAuth } from '@/hooks/useAuth'
-import {
-  apiGetUser,
-  apiUpsertUser,
-  apiGetGoals,
-  apiGetBudgetPlan,
-  apiUpsertBudgetPlan,
-  UserProfile,
-  Goal,
-  BudgetPlan,
-} from '@/lib/api-client'
-import { getCurrentMonthYear, generateBudget } from '@/lib/utils'
+import { createContext, useContext, useEffect, useCallback, ReactNode } from 'react'
+import { useConvexAuth, useMutation, useQuery } from 'convex/react'
+import { api } from '@/convex/_generated/api'
+import { Doc } from '@/convex/_generated/dataModel'
+import { getCurrentMonthYear } from '@/lib/utils'
+
+export type UserProfile = Doc<'users'>
+export type Goal = Doc<'goals'>
+export type BudgetPlan = Doc<'budget_plans'>
 
 interface UserContextValue {
   profile: UserProfile | null
   goals: Goal[]
   budgetPlan: BudgetPlan | null
   profileLoading: boolean
+  goalsLoading: boolean
   /** Sum of saved_amount across all goals */
   totalGoalsSaved: number
-  refetchProfile: () => void
-  refetchGoals: () => void
   /**
    * Update monthly pocket-money AND auto-generate / override the current
-   * month's 50/30/20 budget plan. Updates context optimistically.
+   * month's 50/30/20 budget plan. Throws on validation errors.
    */
   setMonthlyIncomeAndBudget: (income: number) => Promise<void>
 }
@@ -44,95 +43,62 @@ const UserContext = createContext<UserContextValue>({
   goals: [],
   budgetPlan: null,
   profileLoading: true,
+  goalsLoading: true,
   totalGoalsSaved: 0,
-  refetchProfile: () => {},
-  refetchGoals: () => {},
   setMonthlyIncomeAndBudget: async () => {},
 })
 
 export function UserProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
+  const { isLoading: authLoading, isAuthenticated } = useConvexAuth()
   const { month, year } = getCurrentMonthYear()
 
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [goals, setGoals] = useState<Goal[]>([])
-  const [budgetPlan, setBudgetPlan] = useState<BudgetPlan | null>(null)
-  const [profileLoading, setProfileLoading] = useState(true)
+  const args = isAuthenticated ? {} : 'skip'
+  const profile = useQuery(api.users.me, args)
+  const goals = useQuery(api.goals.list, args)
+  const budgetPlan = useQuery(api.budget.get, isAuthenticated ? { month, year } : 'skip')
 
-  const fetchProfile = useCallback(async () => {
-    if (!user) return
-    setProfileLoading(true)
-    try {
-      const [{ user: u }, { budgetPlan: b }] = await Promise.all([
-        apiGetUser(),
-        apiGetBudgetPlan(month, year),
-      ])
-      setProfile(u as UserProfile | null)
-      setBudgetPlan(b as BudgetPlan | null)
-    } catch {
-      // silently ignore — user may not have a profile yet
-    }
-    setProfileLoading(false)
-  }, [user, month, year])
+  const ensureProfile = useMutation(api.users.ensure)
+  const ensureBudget = useMutation(api.budget.ensureForPeriod)
+  const setIncome = useMutation(api.budget.setIncomeAndRegenerate)
 
-  const fetchGoals = useCallback(async () => {
-    if (!user) return
-    try {
-      const { goals: data } = await apiGetGoals()
-      setGoals(data || [])
-    } catch {
-      // ignore
-    }
-  }, [user])
-
+  // Once per session: create the profile on first sign-in, then this month's
+  // plan from the saved income (so a new month starts with a budget).
   useEffect(() => {
-    fetchProfile()
-    fetchGoals()
-  }, [fetchProfile, fetchGoals])
+    if (!isAuthenticated) return
+    ensureProfile({})
+      .then(() => ensureBudget({ month, year }))
+      .catch((err) => console.error('[ChillFin] profile setup failed', err))
+  }, [isAuthenticated, month, year, ensureProfile, ensureBudget])
 
-  /** Sum of all goal saved_amounts */
-  const totalGoalsSaved = goals.reduce((s, g) => s + Number(g.saved_amount), 0)
-
-  /**
-   * One-shot: save income to profile + auto-generate 50/30/20 budget plan.
-   * Called from the Dashboard overview "Quick Setup" panel and from the
-   * Budget page "Update & Regenerate" button.
-   */
   const setMonthlyIncomeAndBudget = useCallback(async (income: number) => {
-    if (!user || income <= 0) return
-    const generated = generateBudget(income)
-    const newPlan: Omit<BudgetPlan, 'id' | 'firebase_uid'> = {
-      month,
-      year,
-      needs_amount: generated.needs_amount,
-      wants_amount: generated.wants_amount,
-      savings_amount: generated.savings_amount,
-    }
-    // Optimistic update
-    setProfile((prev) => prev ? { ...prev, monthly_pocket_money: income } : prev)
-    setBudgetPlan({ firebase_uid: user.uid, ...newPlan })
-    // Persist via API routes
-    await Promise.all([
-      apiUpsertUser({ monthly_pocket_money: income }),
-      apiUpsertBudgetPlan(newPlan),
-    ])
-    // Revalidate from DB
-    fetchProfile()
-  }, [user, month, year, fetchProfile])
+    if (income <= 0) return
+    await setIncome({ income, month, year })
+  }, [setIncome, month, year])
+
+  const goalList = goals ?? []
+  /** Sum of all goal saved_amounts */
+  const totalGoalsSaved = goalList.reduce((s, g) => s + g.saved_amount, 0)
 
   return (
     <UserContext.Provider
       value={{
-        profile,
-        goals,
-        budgetPlan,
-        profileLoading,
+        profile: profile ?? null,
+        goals: goalList,
+        budgetPlan: budgetPlan ?? null,
+        profileLoading: profile === undefined || budgetPlan === undefined,
+        goalsLoading: goals === undefined,
         totalGoalsSaved,
-        refetchProfile: fetchProfile,
-        refetchGoals: fetchGoals,
         setMonthlyIncomeAndBudget,
       }}
     >
+      {/* Signed in with Google, but Convex rejected the token (usually a missing
+          FIREBASE_PROJECT_ID on the Convex deployment) — say so instead of
+          showing loading skeletons forever */}
+      {!authLoading && !isAuthenticated && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[calc(100%-2rem)] bg-red-500/10 border border-red-500/30 text-red-300 text-xs rounded-xl px-4 py-3 backdrop-blur">
+          ⚠️ We couldn&apos;t connect your account to the database. Please sign out and sign in again.
+        </div>
+      )}
       {children}
     </UserContext.Provider>
   )
@@ -141,4 +107,3 @@ export function UserProvider({ children }: { children: ReactNode }) {
 export function useUser() {
   return useContext(UserContext)
 }
-

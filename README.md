@@ -12,12 +12,13 @@
 |---|---|
 | **Pocket Money Tracker** | Log income & expenses with categories, filter by type, see real-time balance + category pie chart |
 | **Smart Budget Planner** | Auto-generated 50/30/20 budget anchored to pocket money — now triggers from Overview too |
+| **Smart Insights** *(beta)* | Month-end spend projection, next-month forecast and unusual-category alerts from your own history |
 | **Goal Vaults** | Save toward named goals with visual progress bars + horizontal bar chart |
 | **EMI Advisor** | Calculate EMI cost + affordability score, view principal/interest donut & amortisation chart |
 | **Investment Portfolio** | SEBI-aligned options with **"Calculate Returns →"** per card |
 | **Portfolio Calculator** | SIP compound growth projections with live area chart and milestone cards |
 | **Financial Tools** | Inflation Calculator + Asset Depreciation Calculator, both with graphs |
-| **AI Financial Advisor** | Streaming AI chat (Qwen 3.5-122B) — SEBI-aware, student-focused |
+| **AI Financial Advisor** | Streaming AI chat that knows your budget, spending and goals — SEBI-aware, student-focused |
 | **Connected Overview** | Financial health score (0–100), auto-generate budget inline, goals savings synced across all tabs |
 
 ---
@@ -26,12 +27,13 @@
 
 | Layer | Technology |
 |---|---|
-| **Framework** | Next.js 14 (App Router) + TypeScript |
+| **Framework** | Next.js 15 (App Router) + React 19 + TypeScript |
 | **Auth** | Firebase Auth (Google OAuth) |
-| **Database** | Supabase (PostgreSQL) |
-| **AI** | NVIDIA NIM — Qwen 3.5-122B (SSE streaming) |
+| **Database / backend** | Convex (reactive queries, validates Firebase ID tokens) |
+| **AI** | Any OpenAI-compatible API — NVIDIA NIM by default (SSE streaming) |
 | **Styling** | Tailwind CSS with custom design tokens |
-| **Deployment** | Netlify (`@netlify/plugin-nextjs`) |
+| **Deployment** | Vercel (+ `npx convex deploy`), GitHub Actions CI |
+| **Tests** | Vitest + convex-test |
 | **Icons** | Lucide React |
 | **Fonts** | Playfair Display · DM Sans · JetBrains Mono |
 
@@ -40,16 +42,16 @@
 ## 🏗️ Architecture
 
 ```
-Browser → Next.js App (Netlify)
-              ├── Firebase Auth (Google Sign-In)
-              ├── Supabase (PostgreSQL) ← direct client + API routes
-              └── /api/advisor → NVIDIA NIM (Qwen 3.5-122B) → SSE stream
+Browser ⇄ Convex (websocket)          ← Convex verifies the Firebase ID token
+   │          └── users · transactions · budget_plans · goals · emi_calculations
+   ├── Firebase Auth (Google Sign-In)
+   └── /api/advisor (Vercel) → Convex (auth + quota + context) → LLM → SSE stream
 ```
 
-- **Auth**: Firebase UID is the universal foreign key across all Supabase tables  
-- **Security**: All API routes verify Firebase ID tokens via `firebase-admin` SDK  
-- **State**: `UserContext` provides shared profile/goals/budgetPlan across dashboard  
-- **Streaming AI**: Server proxies NVIDIA NIM SSE stream token-by-token to the browser  
+- **Auth**: Firebase UID (the token's `subject`) owns every Convex row — never taken from request arguments
+- **Security**: every Convex mutation validates input and checks ownership; no database secret lives in the app
+- **State**: `UserContext` + `useTransactions` subscribe to Convex queries, so every page updates live
+- **Streaming AI**: the server builds the student's context from Convex and pipes the LLM's SSE stream to the browser
 
 ---
 
@@ -59,46 +61,47 @@ Browser → Next.js App (Netlify)
 ├── app/
 │   ├── page.tsx                  # Public landing page
 │   ├── login/                    # Google sign-in
-│   ├── api/
-│   │   ├── user/route.ts         # User CRUD (token-verified)
-│   │   └── advisor/route.ts      # NVIDIA AI proxy (token-verified)
+│   ├── api/advisor/route.ts      # LLM proxy (auth + quota via Convex)
 │   └── dashboard/
-│       ├── page.tsx              # Overview — stats, budget bar, recent tx
+│       ├── page.tsx              # Overview — stats, health, Smart Insights, trend
 │       ├── tracker/              # Expense / income logger
 │       ├── budget/               # 50/30/20 monthly planner
 │       ├── goals/                # Savings goal vaults
 │       ├── emi/                  # EMI calculator + history
-│       ├── portfolio/            # Investment education hub
+│       ├── portfolio/            # Investment education hub + calculator
+│       ├── tools/                # Inflation & depreciation calculators
 │       └── advisor/              # AI chat interface
-├── components/
-│   ├── AuthGuard.tsx             # Route protection
-│   ├── dashboard/Sidebar.tsx     # Responsive nav
-│   └── ui/                       # Button, Input, Modal, StatCard
-├── contexts/
-│   └── UserContext.tsx           # Shared profile/goals/budget state
-├── hooks/
-│   ├── useAuth.ts                # Firebase auth state
-│   └── useTransactions.ts        # Supabase CRUD + derived totals
+├── convex/
+│   ├── schema.ts                 # Tables + indexes
+│   ├── auth.config.ts            # Firebase ID token verification
+│   ├── users.ts · transactions.ts · budget.ts · goals.ts · emi.ts
+│   ├── advisor.ts                # Quota + server-built AI context
+│   ├── migration.ts              # Post-import verification stats
+│   └── _generated/               # Generated by `npx convex dev` (committed)
+├── components/                   # UI, charts, Sidebar, SmartInsights, ConvexClientProvider
+├── contexts/UserContext.tsx      # Live profile / goals / budget
+├── hooks/                        # useAuth (Firebase), useTransactions (Convex)
 ├── lib/
-│   ├── firebase.ts               # Firebase client (browser-only)
-│   ├── firebase-admin.ts         # Firebase Admin SDK (server-only)
-│   ├── supabase.ts               # Supabase client + DB helpers + types
-│   └── utils.ts                  # EMI math, formatters, categories
-└── supabase/
-    ├── schema.sql                # Full DB schema + indexes
-    └── rls_migration.sql         # RLS policies (run in Supabase SQL Editor)
+│   ├── insights.ts               # Forecasts (baseline models)
+│   ├── sse.ts                    # Streaming parser for the AI chat
+│   └── utils.ts                  # EMI math, formatters, date helpers, categories
+├── scripts/supabase-to-convex.mjs  # One-time data export for the migration
+└── docs/                         # AUDIT · MIGRATION · LLM · ML_ROADMAP
 ```
 
 ---
 
 ## 🗄️ Database Schema
 
-```sql
-users           — firebase_uid (PK), name, email, college, monthly_pocket_money
-transactions    — firebase_uid, type (income|expense), amount, category, date
-budget_plans    — firebase_uid, month, year, needs_amount, wants_amount, savings_amount
-goals           — firebase_uid, name, target_amount, saved_amount, target_date, emoji
+Defined in [`convex/schema.ts`](./convex/schema.ts):
+
+```
+users            — firebase_uid, name, email, college, monthly_pocket_money
+transactions     — firebase_uid, type (income|expense), amount, category, description?, date (YYYY-MM-DD)
+budget_plans     — firebase_uid, month, year, needs_amount, wants_amount, savings_amount
+goals            — firebase_uid, name, target_amount, saved_amount, target_date?, emoji
 emi_calculations — firebase_uid, principal, interest_rate, tenure_months, monthly_emi, affordability_score
+rate_limits      — per-user AI advisor quota
 ```
 
 ---
@@ -121,16 +124,18 @@ cp .env.example .env.local
 
 Fill in `.env.local` with your credentials (see [Environment Variables](#-environment-variables) below).
 
-### 3. Set up Supabase database
+### 3. Set up Convex
 
-1. Create a project at [supabase.com](https://supabase.com)
-2. Go to **SQL Editor** and run `supabase/schema.sql`
-3. Optionally run `supabase/rls_migration.sql` to enable Row Level Security
+```bash
+npx convex dev                                   # creates the project, writes .env.local, keep it running
+npx convex env set FIREBASE_PROJECT_ID <your-firebase-project-id>
+```
 
 ### 4. Run locally
 
 ```bash
-npm run dev
+npm run dev          # in a second terminal
+npm test             # unit + Convex function tests
 ```
 
 Open [http://localhost:3000](http://localhost:3000)
@@ -139,61 +144,47 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ## 🔑 Environment Variables
 
-Create a `.env.local` file in the root:
+See [`.env.example`](./.env.example). In short:
 
-```env
-# Firebase (get from Firebase Console → Project Settings → General)
-NEXT_PUBLIC_FIREBASE_API_KEY=
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-NEXT_PUBLIC_FIREBASE_APP_ID=
-NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=
-
-# Supabase (get from Supabase Dashboard → Settings → API)
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-
-# NVIDIA NIM (get from build.nvidia.com)
-NVIDIA_API_KEY=
-
-# Firebase Admin SDK — SERVER ONLY, never prefix with NEXT_PUBLIC_
-# Get from: Firebase Console → Project Settings → Service Accounts → Generate new private key
-# Paste the entire JSON as a single-line string
-FIREBASE_ADMIN_SERVICE_ACCOUNT={"type":"service_account","project_id":"..."}
-```
+| Variable | Where |
+|---|---|
+| `NEXT_PUBLIC_FIREBASE_*` | `.env.local` and Vercel |
+| `CONVEX_DEPLOYMENT`, `NEXT_PUBLIC_CONVEX_URL` | written by `npx convex dev`; injected on Vercel by `convex deploy` |
+| `CONVEX_DEPLOY_KEY` | Vercel only (production key for Production, preview key for Preview) |
+| `LLM_API_KEY` (+ optional `LLM_BASE_URL`, `LLM_MODEL`) | `.env.local` and Vercel — see [docs/LLM.md](./docs/LLM.md) |
+| `FIREBASE_PROJECT_ID`, `ADVISOR_HOURLY_LIMIT` | Convex deployment (`npx convex env set`) |
 
 ---
 
-## 🚢 Deployment (Netlify)
+## 🚢 Deployment (Vercel + Convex)
 
-1. Connect the repo to Netlify
-2. Build command: `npm run build`  
-3. Publish directory: `.next`
-4. Add all environment variables from `.env.local` to **Netlify → Site → Environment Variables**
-5. The `@netlify/plugin-nextjs` plugin is already configured in `netlify.toml`
+1. Import the repo in Vercel — `vercel.json` sets the build to `npx convex deploy --cmd 'npm run build'`
+2. Add `CONVEX_DEPLOY_KEY` (Production + Preview), the Firebase vars and `LLM_API_KEY`
+3. Add the Vercel domain to Firebase → Authentication → Authorized domains
 
-> **Important:** The `FIREBASE_ADMIN_SERVICE_ACCOUNT` must be set in Netlify env vars for API token verification to work in production.
+Every PR runs CI (lint, typecheck, tests, build) and gets a Vercel preview with its own Convex preview deployment.
+Moving from the old Supabase + Netlify setup: follow [docs/MIGRATION.md](./docs/MIGRATION.md).
 
 ---
 
 ## 🔐 Security
 
-- **Firebase ID tokens** are verified server-side on every API route using `firebase-admin`
-- **UID is never trusted from the request body** — always sourced from the verified token
-- **RLS-ready** — `supabase/rls_migration.sql` enables per-user row policies
-- **`.env.local` is gitignored** — secrets never reach the repository
+- **Firebase ID tokens** are verified by Convex on every query and mutation
+- **The owner is never trusted from the request** — always the verified token's subject
+- **Input validation + ownership checks** in every mutation; covered by tests
+- **AI advisor** uses server-built context, per-user hourly quota and message caps
+- **`.env*` files are gitignored** — secrets never reach the repository
+- Known issues and recommendations: [docs/AUDIT.md](./docs/AUDIT.md)
 
 ---
 
 ## 🤖 AI Advisor Details
 
-- **Model:** Qwen 3.5-122B-A10B via [NVIDIA NIM](https://build.nvidia.com)
-- **Streaming:** Token-by-token SSE stream proxied through `/api/advisor`
-- **Context-aware:** User's monthly pocket money injected into system prompt
-- **SEBI-compliant:** Never recommends specific stocks; always adds educational disclaimers
-- **Thinking mode disabled** — `enable_thinking: false` for clean, direct responses
+- **Provider:** any OpenAI-compatible API (`LLM_BASE_URL`, `LLM_MODEL`) — defaults to NVIDIA NIM, `qwen/qwen3.5-122b-a10b`
+- **Streaming:** token-by-token SSE stream proxied through `/api/advisor`
+- **Context-aware:** income, this month's budget and spending, goals and Smart Insights forecasts — built server-side from Convex
+- **SEBI-compliant:** never recommends specific stocks; always adds educational disclaimers
+- **Setup & troubleshooting:** [docs/LLM.md](./docs/LLM.md) · adding ML/DL models: [docs/ML_ROADMAP.md](./docs/ML_ROADMAP.md)
 
 ---
 

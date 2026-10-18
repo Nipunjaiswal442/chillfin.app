@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
-import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
 import { useTransactions } from '@/hooks/useTransactions'
-import { apiGetUser, apiUpsertUser, apiGetBudgetPlan, apiUpsertBudgetPlan, BudgetPlan } from '@/lib/api-client'
-import { formatCurrency, generateBudget, getCurrentMonthYear, getMonthName } from '@/lib/utils'
+import { formatCurrency, getCurrentMonthYear, getMonthName, isInMonth } from '@/lib/utils'
+import { errorMessage } from '@/lib/errors'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 
@@ -29,72 +28,36 @@ const BUDGET_CATS: BudgetCategory[] = [
 ]
 
 export default function BudgetPage() {
-  const { user } = useAuth()
-  const { refetchProfile } = useUser()
-  const { transactions } = useTransactions(user?.uid)
-  const [monthlyIncome, setMonthlyIncome] = useState<number>(0)
+  // Plan auto-generation for the month happens in UserContext
+  const { profile, budgetPlan: plan, profileLoading: loading, setMonthlyIncomeAndBudget } = useUser()
+  const { transactions } = useTransactions()
+  const monthlyIncome = Number(profile?.monthly_pocket_money ?? 0)
   const [incomeInput, setIncomeInput] = useState('')
-  const [plan, setPlan] = useState<BudgetPlan | null>(null)
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const { month, year } = getCurrentMonthYear()
 
+  // Pre-fill the input once the saved income arrives
   useEffect(() => {
-    if (!user) return
-    Promise.all([
-      apiGetUser(),
-      apiGetBudgetPlan(month, year),
-    ]).then(([{ user: u }, { budgetPlan: b }]) => {
-      const income = Number(u?.monthly_pocket_money ?? 0)
-      setMonthlyIncome(income)
-      setIncomeInput(String(income))
-      if (b) {
-        setPlan(b as BudgetPlan)
-      } else if (income > 0) {
-        const generated = generateBudget(income)
-        const newPlan: Omit<BudgetPlan, 'id' | 'firebase_uid'> = {
-          month,
-          year,
-          needs_amount: generated.needs_amount,
-          wants_amount: generated.wants_amount,
-          savings_amount: generated.savings_amount,
-        }
-        apiUpsertBudgetPlan(newPlan).then(({ budgetPlan: data }) => {
-          if (data) setPlan(data as BudgetPlan)
-        })
-      }
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [user, month, year])
+    if (monthlyIncome > 0) setIncomeInput(String(monthlyIncome))
+  }, [monthlyIncome])
 
   const handleUpdateIncome = async () => {
-    if (!user) return
     const income = parseFloat(incomeInput)
     if (!income || income <= 0) return
     setSaving(true)
-    const generated = generateBudget(income)
-    const newPlan: Omit<BudgetPlan, 'id' | 'firebase_uid'> = {
-      month,
-      year,
-      needs_amount: generated.needs_amount,
-      wants_amount: generated.wants_amount,
-      savings_amount: generated.savings_amount,
+    setSaveError(null)
+    try {
+      await setMonthlyIncomeAndBudget(income)
+    } catch (err) {
+      setSaveError(errorMessage(err))
+    } finally {
+      setSaving(false)
     }
-    await Promise.all([
-      apiUpsertUser({ monthly_pocket_money: income }),
-      apiUpsertBudgetPlan(newPlan),
-    ])
-    setMonthlyIncome(income)
-    setPlan({ firebase_uid: user.uid, ...newPlan })
-    setSaving(false)
-    refetchProfile()   // sync shared UserContext so dashboard reflects new budget
   }
 
   // Actual spending this month by category mapping
-  const thisMonthTx = transactions.filter((t) => {
-    const d = new Date(t.date)
-    return t.type === 'expense' && d.getMonth() + 1 === month && d.getFullYear() === year
-  })
+  const thisMonthTx = transactions.filter((t) => t.type === 'expense' && isInMonth(t.date, month, year))
 
   const needsCats = ['food', 'travel', 'health', 'education']
   const wantsCats = ['entertainment', 'shopping', 'misc']
@@ -149,6 +112,7 @@ export default function BudgetPage() {
         <p className="text-xs text-text-muted mt-2">
           We&apos;ll auto-generate a personalised 50/30/20 budget based on your income.
         </p>
+        {saveError && <p className="text-xs text-red-400 mt-2">{saveError}</p>}
       </div>
 
       {loading ? (

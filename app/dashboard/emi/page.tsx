@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import dynamic from 'next/dynamic'
-import { useAuth } from '@/hooks/useAuth'
-import { apiGetUser, apiSaveEMICalculation, apiGetEMIHistory, EMICalculation } from '@/lib/api-client'
+import { useConvexAuth, useMutation, useQuery } from 'convex/react'
+import { api } from '@/convex/_generated/api'
+import { useUser } from '@/contexts/UserContext'
 import { formatCurrency, formatDate, calculateEMI, calculateAffordabilityScore, getAffordabilityLabel } from '@/lib/utils'
+import { errorMessage } from '@/lib/errors'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import { buildAmortisationData } from '@/components/charts/AmortisationChart'
@@ -13,10 +15,13 @@ const EMIBreakdownChart = dynamic(() => import('@/components/charts/EMIBreakdown
 const AmortisationChart = dynamic(() => import('@/components/charts/AmortisationChart'), { ssr: false })
 
 export default function EMIPage() {
-  const { user } = useAuth()
-  const [monthlyIncome, setMonthlyIncome] = useState<number>(0)
-  const [history, setHistory] = useState<EMICalculation[]>([])
+  const { isAuthenticated } = useConvexAuth()
+  const { profile } = useUser()
+  const monthlyIncome = Number(profile?.monthly_pocket_money ?? 0)
+  const history = useQuery(api.emi.history, isAuthenticated ? {} : 'skip') ?? []
+  const saveCalculation = useMutation(api.emi.save)
   const [calculating, setCalculating] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     item_name: '',
@@ -33,12 +38,6 @@ export default function EMIPage() {
     monthlyLeft: number
   } | null>(null)
 
-  useEffect(() => {
-    if (!user) return
-    apiGetUser().then(({ user: u }) => setMonthlyIncome(Number(u?.monthly_pocket_money ?? 0)))
-    apiGetEMIHistory().then(({ emiHistory }) => setHistory(emiHistory || []))
-  }, [user])
-
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault()
     const P = parseFloat(form.principal)
@@ -53,21 +52,20 @@ export default function EMIPage() {
 
     setResult({ monthlyEMI, totalCost, totalInterest, affordabilityScore, monthlyLeft })
 
-    // Save to history
-    if (user) {
-      const calc: Omit<EMICalculation, 'id' | 'created_at' | 'firebase_uid'> = {
+    // Save to history (the server recomputes EMI + score; the list updates live)
+    setSaveError(null)
+    try {
+      await saveCalculation({
         item_name: form.item_name || undefined,
         principal: P,
         interest_rate: r || 0,
         tenure_months: n,
-        monthly_emi: monthlyEMI,
-        total_cost: totalCost,
-        affordability_score: affordabilityScore,
-      }
-      const { emiCalculation } = await apiSaveEMICalculation(calc)
-      if (emiCalculation) setHistory((prev) => [emiCalculation, ...prev.slice(0, 9)])
+      })
+    } catch (err) {
+      setSaveError(`Calculated, but not saved to history: ${errorMessage(err)}`)
+    } finally {
+      setCalculating(false)
     }
-    setCalculating(false)
   }
 
   const affordInfo = result ? getAffordabilityLabel(result.affordabilityScore) : null
@@ -123,6 +121,7 @@ export default function EMIPage() {
             <Button type="submit" className="w-full" loading={calculating}>
               Calculate EMI
             </Button>
+            {saveError && <p className="text-xs text-red-400">{saveError}</p>}
           </form>
         </div>
 
@@ -204,13 +203,13 @@ export default function EMIPage() {
             {history.map((h) => {
               const info = getAffordabilityLabel(h.affordability_score)
               return (
-                <div key={h.id} className="flex items-center justify-between py-3 border-b border-metallic-grey/20 last:border-0">
+                <div key={h._id} className="flex items-center justify-between py-3 border-b border-metallic-grey/20 last:border-0">
                   <div>
                     <p className="text-sm font-semibold text-neon-white">{h.item_name || 'Loan'}</p>
                     <p className="text-xs text-text-muted">
                       {formatCurrency(h.principal)} · {h.tenure_months}m · {h.interest_rate}% p.a.
                     </p>
-                    {h.created_at && <p className="text-xs text-text-muted">{formatDate(h.created_at)}</p>}
+                    <p className="text-xs text-text-muted">{formatDate(h.created_at)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-bold text-gold-light">{formatCurrency(h.monthly_emi)}/mo</p>

@@ -6,8 +6,10 @@ import Link from 'next/link'
 import { useAuth } from '@/hooks/useAuth'
 import { useUser } from '@/contexts/UserContext'
 import { useTransactions } from '@/hooks/useTransactions'
-import { formatCurrency, formatCurrencyShort, getCurrentMonthYear, getMonthName } from '@/lib/utils'
+import { formatCurrency, formatCurrencyShort, getCurrentMonthYear, getMonthName, isInMonth, lastNMonths } from '@/lib/utils'
+import { errorMessage } from '@/lib/errors'
 import StatCard from '@/components/ui/StatCard'
+import SmartInsights from '@/components/dashboard/SmartInsights'
 import { Wallet, PieChart, Target, Calculator, TrendingUp, Bot, ArrowRight, Plus, Wrench, CheckCircle, AlertCircle } from 'lucide-react'
 
 const MonthlyTrendChart = dynamic(() => import('@/components/charts/MonthlyTrendChart'), { ssr: false })
@@ -39,17 +41,18 @@ function StatSkeleton() {
 export default function DashboardPage() {
   const { user } = useAuth()
   const { profile, goals, budgetPlan, profileLoading, totalGoalsSaved, setMonthlyIncomeAndBudget } = useUser()
-  const { transactions, totalIncome, totalExpense, balance, loading: txLoading } = useTransactions(user?.uid)
+  const { transactions, totalIncome, totalExpense, balance, loading: txLoading } = useTransactions()
   const { month, year } = getCurrentMonthYear()
 
   // Quick income setup state (shown inline when income = 0)
   const [incomeInput, setIncomeInput] = useState('')
   const [settingIncome, setSettingIncome] = useState(false)
   const [incomeSet, setIncomeSet] = useState(false)
+  const [incomeError, setIncomeError] = useState<string | null>(null)
 
   // This month's expenses
   const thisMonthExpense = transactions
-    .filter(t => { const d = new Date(t.date); return t.type === 'expense' && d.getMonth() + 1 === month && d.getFullYear() === year })
+    .filter(t => t.type === 'expense' && isInMonth(t.date, month, year))
     .reduce((s, t) => s + Number(t.amount), 0)
 
   const monthlyIncome = Number(profile?.monthly_pocket_money ?? 0)
@@ -61,14 +64,9 @@ export default function DashboardPage() {
   const savingsBudget = budgetPlan?.savings_amount ?? Math.round(monthlyIncome * 0.2)
 
   // Build last-6-months trend data
-  const trendData = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date()
-    d.setMonth(d.getMonth() - (5 - i))
-    const m = d.getMonth() + 1
-    const y = d.getFullYear()
-    const label = d.toLocaleString('default', { month: 'short' })
-    const income = transactions.filter(t => { const td = new Date(t.date); return t.type === 'income' && td.getMonth() + 1 === m && td.getFullYear() === y }).reduce((s, t) => s + Number(t.amount), 0)
-    const expense = transactions.filter(t => { const td = new Date(t.date); return t.type === 'expense' && td.getMonth() + 1 === m && td.getFullYear() === y }).reduce((s, t) => s + Number(t.amount), 0)
+  const trendData = lastNMonths(6).map(({ month: m, year: y, label }) => {
+    const income = transactions.filter(t => t.type === 'income' && isInMonth(t.date, m, y)).reduce((s, t) => s + Number(t.amount), 0)
+    const expense = transactions.filter(t => t.type === 'expense' && isInMonth(t.date, m, y)).reduce((s, t) => s + Number(t.amount), 0)
     return { month: label, income, expense }
   })
   const hasTrendData = trendData.some(d => d.income > 0 || d.expense > 0)
@@ -80,9 +78,15 @@ export default function DashboardPage() {
     const val = parseFloat(incomeInput)
     if (!val || val <= 0) return
     setSettingIncome(true)
-    await setMonthlyIncomeAndBudget(val)
-    setSettingIncome(false)
-    setIncomeSet(true)
+    setIncomeError(null)
+    try {
+      await setMonthlyIncomeAndBudget(val)
+      setIncomeSet(true)
+    } catch (err) {
+      setIncomeError(errorMessage(err))
+    } finally {
+      setSettingIncome(false)
+    }
   }
 
   // Financial health score (0–100)
@@ -157,6 +161,7 @@ export default function DashboardPage() {
               {settingIncome ? 'Saving…' : 'Auto-Generate Budget →'}
             </button>
           </form>
+          {incomeError && <p className="text-xs text-red-400 mt-2">{incomeError}</p>}
         </div>
       )}
 
@@ -297,6 +302,11 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* ─── Smart Insights (forecasts) ──────────────────────────────────── */}
+      {!txLoading && !profileLoading && transactions.length > 0 && (
+        <SmartInsights transactions={transactions} spendingBudget={monthlyIncome > 0 ? spendingBudget : 0} />
+      )}
+
       {/* ─── Monthly Trend Chart ─────────────────────────────────────────── */}
       {!txLoading && hasTrendData && (
         <div className="bg-bg-card border border-[rgba(212,168,67,0.06)] rounded-2xl p-5">
@@ -344,7 +354,7 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-2">
               {recentTx.map(tx => (
-                <div key={tx.id} className="flex items-center justify-between py-2 border-b border-metallic-grey/30 last:border-0">
+                <div key={tx._id} className="flex items-center justify-between py-2 border-b border-metallic-grey/30 last:border-0">
                   <div className="flex items-center gap-3">
                     <span className="text-lg">{tx.type === 'income' ? '💰' : '💸'}</span>
                     <div>
@@ -380,7 +390,7 @@ export default function DashboardPage() {
             {goals.slice(0, 4).map(goal => {
               const pct = Math.min(100, (Number(goal.saved_amount) / Number(goal.target_amount)) * 100)
               return (
-                <div key={goal.id} className="p-4 bg-metallic-grey/20 rounded-xl border border-metallic-grey/40">
+                <div key={goal._id} className="p-4 bg-metallic-grey/20 rounded-xl border border-metallic-grey/40">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <span>{goal.emoji}</span>

@@ -1,10 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import dynamic from 'next/dynamic'
-import { useAuth } from '@/hooks/useAuth'
-import { apiGetGoals, apiAddGoal, apiDeleteGoal, apiUpdateGoalSaved, Goal } from '@/lib/api-client'
+import { useMutation } from 'convex/react'
+import { api } from '@/convex/_generated/api'
+import { Id } from '@/convex/_generated/dataModel'
+import { useUser, Goal } from '@/contexts/UserContext'
 import { formatCurrency, formatDate } from '@/lib/utils'
+import { errorMessage } from '@/lib/errors'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
@@ -15,13 +18,17 @@ const GoalProgressChart = dynamic(() => import('@/components/charts/GoalProgress
 const EMOJIS = ['🎯', '💻', '✈️', '🎮', '📚', '👟', '🏍️', '📱', '🎸', '💎', '🏠', '🌏']
 
 export default function GoalsPage() {
-  const { user } = useAuth()
-  const [goals, setGoals] = useState<Goal[]>([])
-  const [loading, setLoading] = useState(true)
+  // Same live list as the Overview, so totals stay in sync across tabs
+  const { goals, goalsLoading: loading } = useUser()
+  const createGoal = useMutation(api.goals.create)
+  const addSavings = useMutation(api.goals.addSavings)
+  const removeGoal = useMutation(api.goals.remove)
   const [addModal, setAddModal] = useState(false)
-  const [addSavingsId, setAddSavingsId] = useState<string | null>(null)
+  const [addSavingsId, setAddSavingsId] = useState<Id<'goals'> | null>(null)
   const [savingsInput, setSavingsInput] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const [form, setForm] = useState({
     name: '',
@@ -30,46 +37,47 @@ export default function GoalsPage() {
     emoji: '🎯',
   })
 
-  useEffect(() => {
-    if (!user) return
-    apiGetGoals().then(({ goals: data }) => {
-      setGoals(data || [])
-      setLoading(false)
-    }).catch(() => setLoading(false))
-  }, [user])
-
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user || !form.name || !form.target_amount) return
+    if (!form.name || !form.target_amount) return
     setSubmitting(true)
+    setFormError(null)
     try {
-      const { goal } = await apiAddGoal({
+      await createGoal({
         name: form.name,
         target_amount: parseFloat(form.target_amount),
-        saved_amount: 0,
-        target_date: form.target_date || null,
+        target_date: form.target_date || undefined,
         emoji: form.emoji,
       })
-      setGoals((prev) => [...prev, goal])
-    } catch { /* ignore */ }
-    setForm({ name: '', target_amount: '', target_date: '', emoji: '🎯' })
-    setAddModal(false)
-    setSubmitting(false)
+      setForm({ name: '', target_amount: '', target_date: '', emoji: '🎯' })
+      setAddModal(false)
+    } catch (err) {
+      setFormError(errorMessage(err))
+    } finally {
+      setSubmitting(false)
+    }
   }
 
-  const handleDelete = async (id: string) => {
-    await apiDeleteGoal(id)
-    setGoals((prev) => prev.filter((g) => g.id !== id))
+  const handleDelete = async (id: Id<'goals'>) => {
+    setActionError(null)
+    try {
+      await removeGoal({ id })
+    } catch (err) {
+      setActionError(errorMessage(err))
+    }
   }
 
   const handleAddSavings = async (goal: Goal) => {
     const amount = parseFloat(savingsInput)
-    if (!amount || amount <= 0 || !goal.id) return
-    const newSaved = Number(goal.saved_amount) + amount
-    await apiUpdateGoalSaved(goal.id, newSaved)
-    setGoals((prev) => prev.map((g) => g.id === goal.id ? { ...g, saved_amount: newSaved } : g))
-    setSavingsInput('')
-    setAddSavingsId(null)
+    if (!amount || amount <= 0) return
+    setActionError(null)
+    try {
+      await addSavings({ id: goal._id, amount })
+      setSavingsInput('')
+      setAddSavingsId(null)
+    } catch (err) {
+      setActionError(errorMessage(err))
+    }
   }
 
   const totalSaved = goals.reduce((s, g) => s + Number(g.saved_amount), 0)
@@ -119,6 +127,10 @@ export default function GoalsPage() {
         </div>
       )}
 
+      {actionError && (
+        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg py-2 px-3">{actionError}</p>
+      )}
+
       {/* Goals grid */}
       {loading ? (
         <div className="grid sm:grid-cols-2 gap-4">
@@ -137,7 +149,7 @@ export default function GoalsPage() {
             const pct = Math.min(100, (Number(goal.saved_amount) / Number(goal.target_amount)) * 100)
             const done = pct >= 100
             return (
-              <div key={goal.id} className={`bg-bg-card border rounded-2xl p-5 ${done ? 'border-green-500/20' : 'border-metallic-grey/20'}`}>
+              <div key={goal._id} className={`bg-bg-card border rounded-2xl p-5 ${done ? 'border-green-500/20' : 'border-metallic-grey/20'}`}>
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{goal.emoji}</span>
@@ -149,7 +161,7 @@ export default function GoalsPage() {
                     </div>
                   </div>
                   {done && <span className="text-xs bg-green-500/15 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full">✓ Done</span>}
-                  <button onClick={() => handleDelete(goal.id!)} className="text-text-muted hover:text-red-400 transition-colors p-1 ml-1">
+                  <button onClick={() => handleDelete(goal._id)} aria-label="Delete goal" className="text-text-muted hover:text-red-400 transition-colors p-1 ml-1">
                     <Trash2 size={14} />
                   </button>
                 </div>
@@ -174,7 +186,7 @@ export default function GoalsPage() {
 
                 {/* Add savings */}
                 {!done && (
-                  addSavingsId === goal.id ? (
+                  addSavingsId === goal._id ? (
                     <div className="flex gap-2 mt-2">
                       <input
                         type="number"
@@ -189,7 +201,7 @@ export default function GoalsPage() {
                     </div>
                   ) : (
                     <button
-                      onClick={() => setAddSavingsId(goal.id!)}
+                      onClick={() => setAddSavingsId(goal._id)}
                       className="w-full mt-2 text-xs text-gold flex items-center justify-center gap-1 py-2 rounded-lg border border-gold/20 hover:bg-gold/10 transition-all"
                     >
                       <PlusCircle size={12} /> Add savings
@@ -246,6 +258,8 @@ export default function GoalsPage() {
             value={form.target_date}
             onChange={(e) => setForm((f) => ({ ...f, target_date: e.target.value }))}
           />
+
+          {formError && <p className="text-xs text-red-400">{formError}</p>}
 
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" className="flex-1" onClick={() => setAddModal(false)}>Cancel</Button>
