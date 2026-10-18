@@ -9,6 +9,7 @@ import { useTransactions } from '@/hooks/useTransactions'
 import { formatCurrency, formatCurrencyShort, getCurrentMonthYear, getMonthName, isInMonth, lastNMonths } from '@/lib/utils'
 import { errorMessage } from '@/lib/errors'
 import StatCard from '@/components/ui/StatCard'
+import SmartInsights from '@/components/dashboard/SmartInsights'
 import { Wallet, PieChart, Target, Calculator, TrendingUp, Bot, ArrowRight, Plus, Wrench, CheckCircle, AlertCircle } from 'lucide-react'
 
 const MonthlyTrendChart = dynamic(() => import('@/components/charts/MonthlyTrendChart'), { ssr: false })
@@ -299,6 +300,11 @@ export default function DashboardPage() {
               : `${formatCurrency(thisMonthExpense - spendingBudget)} over budget`}
           </p>
         </div>
+      )}
+
+      {/* ─── Smart Insights (forecasts) ──────────────────────────────────── */}
+      {!txLoading && !profileLoading && transactions.length > 0 && (
+        <SmartInsights transactions={transactions} spendingBudget={monthlyIncome > 0 ? spendingBudget : 0} />
       )}
 
       {/* ─── Monthly Trend Chart ─────────────────────────────────────────── */}

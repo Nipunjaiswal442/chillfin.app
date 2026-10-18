@@ -2,6 +2,7 @@ import { v } from 'convex/values'
 import { mutation, MutationCtx } from './_generated/server'
 import { assertISODate, getProfile, requireUid } from './helpers'
 import { getCategoryLabel } from '../lib/utils'
+import { buildInsights } from '../lib/insights'
 
 const WINDOW_MS = 60 * 60 * 1000
 
@@ -40,10 +41,11 @@ async function buildContext(ctx: MutationCtx, uid: string, today: string): Promi
     .query('budget_plans')
     .withIndex('by_user_period', (q) => q.eq('firebase_uid', uid).eq('year', year).eq('month', month))
     .unique()
-  const monthTx = await ctx.db
+  const allTx = await ctx.db
     .query('transactions')
-    .withIndex('by_user_date', (q) => q.eq('firebase_uid', uid).gte('date', `${ym}-01`).lte('date', `${ym}-31`))
+    .withIndex('by_user_date', (q) => q.eq('firebase_uid', uid))
     .collect()
+  const monthTx = allTx.filter((t) => t.date.startsWith(ym) && t.date <= today)
   const goals = await ctx.db
     .query('goals')
     .withIndex('by_user', (q) => q.eq('firebase_uid', uid))
@@ -74,6 +76,12 @@ async function buildContext(ctx: MutationCtx, uid: string, today: string): Promi
     .join(', ')
   lines.push(`Spent so far this month (as of ${today}): ${inr(spent)}${top ? ` — ${top}` : ''}`)
   if (earned > 0) lines.push(`Income logged this month: ${inr(earned)}`)
+
+  // Same statistical forecasts the dashboard shows (lib/insights.ts)
+  const { monthEnd, nextMonth, unusual } = buildInsights(allTx, new Date(year, month - 1, Number(today.slice(8, 10))))
+  if (monthEnd.spentSoFar > 0) lines.push(`Projected spend by month end at the current pace: ${inr(monthEnd.projected)}`)
+  if (nextMonth) lines.push(`Forecast for next month's spending: ${inr(nextMonth.value)} (based on ${nextMonth.basedOnMonths} months)`)
+  for (const u of unusual) lines.push(`Running high this month: ${u.label} ~${inr(u.projected)} vs usual ${inr(u.typical)}`)
 
   if (goals.length > 0) {
     const g = goals

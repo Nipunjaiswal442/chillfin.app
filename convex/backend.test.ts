@@ -149,6 +149,7 @@ describe('advisor', () => {
     if (!res.allowed) return
     expect(res.context).toContain('Monthly pocket money: ₹5000')
     expect(res.context).toContain('Spent so far this month (as of 2026-10-18): ₹1200')
+    expect(res.context).toContain('Projected spend by month end at the current pace: ₹')
     expect(res.context).not.toContain('999')
     expect(res.context).not.toContain('777')
   })
