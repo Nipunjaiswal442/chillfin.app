@@ -1,73 +1,56 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import {
-  apiGetTransactions,
-  apiAddTransaction,
-  apiDeleteTransaction,
-  Transaction,
-} from '@/lib/api-client'
-import { useAuth } from '@/hooks/useAuth'
+import { useConvexAuth, useMutation, useQuery } from 'convex/react'
+import { api } from '@/convex/_generated/api'
+import { Doc, Id } from '@/convex/_generated/dataModel'
+import { errorMessage } from '@/lib/errors'
 
-export function useTransactions(firebaseUid: string | undefined) {
-  const { user } = useAuth()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export type Transaction = Doc<'transactions'>
 
-  const fetchTransactions = useCallback(async () => {
-    if (!firebaseUid || !user) return
-    setLoading(true)
+type NewTransaction = Pick<Transaction, 'type' | 'amount' | 'category' | 'description' | 'date'>
+
+export function useTransactions() {
+  const { isAuthenticated } = useConvexAuth()
+  // Convex de-duplicates this subscription across pages and keeps it live
+  const data = useQuery(api.transactions.list, isAuthenticated ? {} : 'skip')
+  const addMutation = useMutation(api.transactions.add)
+  const removeMutation = useMutation(api.transactions.remove)
+
+  const transactions = data ?? []
+
+  const add = async (tx: NewTransaction) => {
     try {
-      const { transactions: data } = await apiGetTransactions()
-      setTransactions(data || [])
-    } catch (err) {
-      setError(String(err))
-    }
-    setLoading(false)
-  }, [firebaseUid, user])
-
-  useEffect(() => {
-    fetchTransactions()
-  }, [fetchTransactions])
-
-  const add = async (tx: Omit<Transaction, 'id' | 'created_at' | 'firebase_uid'>) => {
-    try {
-      const { transaction } = await apiAddTransaction(tx)
-      setTransactions((prev) => [transaction, ...prev])
+      const transaction = await addMutation(tx)
       return { data: transaction, error: null }
     } catch (err) {
-      return { data: null, error: new Error(String(err)) }
+      return { data: null, error: new Error(errorMessage(err)) }
     }
   }
 
-  const remove = async (id: string) => {
+  const remove = async (id: Id<'transactions'>) => {
     try {
-      await apiDeleteTransaction(id)
-      setTransactions((prev) => prev.filter((t) => t.id !== id))
+      await removeMutation({ id })
       return { error: null }
     } catch (err) {
-      return { error: new Error(String(err)) }
+      return { error: new Error(errorMessage(err)) }
     }
   }
 
   const totalIncome = transactions
     .filter((t) => t.type === 'income')
-    .reduce((sum, t) => sum + Number(t.amount), 0)
+    .reduce((sum, t) => sum + t.amount, 0)
 
   const totalExpense = transactions
     .filter((t) => t.type === 'expense')
-    .reduce((sum, t) => sum + Number(t.amount), 0)
+    .reduce((sum, t) => sum + t.amount, 0)
 
   const balance = totalIncome - totalExpense
 
   return {
     transactions,
-    loading,
-    error,
+    loading: data === undefined,
     add,
     remove,
-    refetch: fetchTransactions,
     totalIncome,
     totalExpense,
     balance,

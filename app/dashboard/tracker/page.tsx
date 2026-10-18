@@ -4,7 +4,8 @@ import { useState } from 'react'
 import dynamic from 'next/dynamic'
 import { useAuth } from '@/hooks/useAuth'
 import { useTransactions } from '@/hooks/useTransactions'
-import { formatCurrency, formatDate, getCategoryEmoji, getCategoryLabel, EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCurrentMonthYear } from '@/lib/utils'
+import { Id } from '@/convex/_generated/dataModel'
+import { formatCurrency, formatDate, getCategoryEmoji, getCategoryLabel, EXPENSE_CATEGORIES, INCOME_CATEGORIES, getCurrentMonthYear, isInMonth, todayISO } from '@/lib/utils'
 import Button from '@/components/ui/Button'
 import Input from '@/components/ui/Input'
 import Modal from '@/components/ui/Modal'
@@ -17,10 +18,12 @@ type TxType = 'expense' | 'income'
 
 export default function TrackerPage() {
   const { user } = useAuth()
-  const { transactions, loading, add, remove, totalIncome, totalExpense, balance } = useTransactions(user?.uid)
+  const { transactions, loading, add, remove, totalIncome, totalExpense, balance } = useTransactions()
   const [modalOpen, setModalOpen] = useState(false)
   const [filterType, setFilterType] = useState<'all' | TxType>('all')
   const [deleting, setDeleting] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
 
   // Form state
   const [form, setForm] = useState({
@@ -28,17 +31,14 @@ export default function TrackerPage() {
     amount: '',
     category: 'food',
     description: '',
-    date: new Date().toISOString().split('T')[0],
+    date: todayISO(),
   })
   const [submitting, setSubmitting] = useState(false)
 
   const { month, year } = getCurrentMonthYear()
 
   const thisMonthExpense = transactions
-    .filter((t) => {
-      const d = new Date(t.date)
-      return t.type === 'expense' && d.getMonth() + 1 === month && d.getFullYear() === year
-    })
+    .filter((t) => t.type === 'expense' && isInMonth(t.date, month, year))
     .reduce((s, t) => s + Number(t.amount), 0)
 
   const filtered = filterType === 'all' ? transactions : transactions.filter((t) => t.type === filterType)
@@ -47,21 +47,29 @@ export default function TrackerPage() {
     e.preventDefault()
     if (!user || !form.amount) return
     setSubmitting(true)
-    await add({
+    setFormError(null)
+    const { error } = await add({
       type: form.type,
       amount: parseFloat(form.amount),
       category: form.category,
       description: form.description,
       date: form.date,
     })
-    setForm({ type: 'expense', amount: '', category: 'food', description: '', date: new Date().toISOString().split('T')[0] })
     setSubmitting(false)
+    if (error) {
+      // Keep the modal open with the user's input so nothing is lost
+      setFormError(error.message)
+      return
+    }
+    setForm({ type: 'expense', amount: '', category: 'food', description: '', date: todayISO() })
     setModalOpen(false)
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: Id<'transactions'>) => {
     setDeleting(id)
-    await remove(id)
+    setListError(null)
+    const { error } = await remove(id)
+    if (error) setListError(error.message)
     setDeleting(null)
   }
 
@@ -120,6 +128,10 @@ export default function TrackerPage() {
         </span>
       </div>
 
+      {listError && (
+        <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg py-2 px-3">{listError}</p>
+      )}
+
       {/* Transaction list */}
       {loading ? (
         <div className="space-y-3">
@@ -139,7 +151,7 @@ export default function TrackerPage() {
       ) : (
         <div className="bg-bg-card border border-metallic-grey/20 rounded-2xl overflow-hidden">
           {filtered.map((tx, i) => (
-            <div key={tx.id} className={`flex items-center gap-4 px-5 py-4 hover:bg-bg-card-hover transition-colors ${i > 0 ? 'border-t border-metallic-grey/20' : ''}`}>
+            <div key={tx._id} className={`flex items-center gap-4 px-5 py-4 hover:bg-bg-card-hover transition-colors ${i > 0 ? 'border-t border-metallic-grey/20' : ''}`}>
               <div className="w-10 h-10 rounded-xl bg-metallic-grey/40 flex items-center justify-center text-lg flex-shrink-0">
                 {getCategoryEmoji(tx.category)}
               </div>
@@ -151,8 +163,9 @@ export default function TrackerPage() {
                 {tx.type === 'income' ? '+' : '-'}{formatCurrency(Number(tx.amount))}
               </span>
               <button
-                onClick={() => handleDelete(tx.id!)}
-                disabled={deleting === tx.id}
+                onClick={() => handleDelete(tx._id)}
+                disabled={deleting === tx._id}
+                aria-label="Delete transaction"
                 className="text-text-muted hover:text-red-400 transition-colors p-1 rounded-lg hover:bg-red-500/10"
               >
                 <Trash2 size={14} />
@@ -220,6 +233,8 @@ export default function TrackerPage() {
             value={form.date}
             onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
           />
+
+          {formError && <p className="text-xs text-red-400">{formError}</p>}
 
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" className="flex-1" onClick={() => setModalOpen(false)}>

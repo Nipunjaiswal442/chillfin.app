@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
-import { useUser } from '@/contexts/UserContext'
-import { formatCurrency } from '@/lib/utils'
+import { createSSEParser } from '@/lib/sse'
 import Button from '@/components/ui/Button'
 import { Send, Bot, RefreshCw } from 'lucide-react'
 import { auth } from '@/lib/firebase'
@@ -24,8 +23,6 @@ const SUGGESTED_QUESTIONS = [
 
 export default function AdvisorPage() {
   const { user } = useAuth()
-  const { profile } = useUser()
-  const monthlyIncome = Number(profile?.monthly_pocket_money ?? 0)
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -56,11 +53,8 @@ export default function AdvisorPage() {
     setMessages((prev) => [...prev, { role: 'assistant', content: '' }])
 
     try {
-      const userContext = monthlyIncome > 0
-        ? `The student's monthly pocket money is ${formatCurrency(monthlyIncome)}.`
-        : ''
-
-      // Get fresh ID token for server-side auth verification
+      // Get fresh ID token for server-side auth verification (the server
+      // builds the student's financial context itself from Convex)
       const idToken = auth ? await auth.currentUser?.getIdToken() : null
 
       const res = await fetch('/api/advisor', {
@@ -69,10 +63,7 @@ export default function AdvisorPage() {
           'Content-Type': 'application/json',
           ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
         },
-        body: JSON.stringify({
-          messages: newMessages,
-          userContext,
-        }),
+        body: JSON.stringify({ messages: newMessages }),
       })
 
       if (!res.ok) {
@@ -82,37 +73,21 @@ export default function AdvisorPage() {
       const reader = res.body?.getReader()
       const decoder = new TextDecoder()
       let fullContent = ''
+      const parse = createSSEParser((delta) => {
+        fullContent += delta
+        // Remove <think>...</think> blocks from display
+        const displayContent = fullContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          { role: 'assistant', content: displayContent },
+        ])
+      })
 
       if (reader) {
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
-
-          const chunk = decoder.decode(value, { stream: true })
-          const lines = chunk.split('\n')
-
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              const data = line.slice(6).trim()
-              if (data === '[DONE]') break
-              try {
-                const parsed = JSON.parse(data)
-                const delta = parsed.choices?.[0]?.delta?.content ?? ''
-                // Filter out thinking tags
-                if (delta) {
-                  fullContent += delta
-                  // Remove <think>...</think> blocks from display
-                  const displayContent = fullContent.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
-                  setMessages((prev) => [
-                    ...prev.slice(0, -1),
-                    { role: 'assistant', content: displayContent },
-                  ])
-                }
-              } catch {
-                // skip invalid JSON chunks
-              }
-            }
-          }
+          parse(decoder.decode(value, { stream: true }))
         }
       }
     } catch {
@@ -150,7 +125,7 @@ export default function AdvisorPage() {
           </div>
           <div>
             <h1 className="font-playfair font-bold text-xl text-neon-white">AI Financial Advisor</h1>
-            <p className="text-text-muted text-xs">Powered by Qwen 3.5 · SEBI-aware · Student-focused</p>
+            <p className="text-text-muted text-xs">Knows your budget &amp; goals · SEBI-aware · Student-focused</p>
           </div>
         </div>
         <Button variant="ghost" size="sm" onClick={handleClear}>
